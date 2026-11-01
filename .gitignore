@@ -1,0 +1,15 @@
+# Archivos auxiliares de compilación
+*.aux
+*.log
+*.toc
+*.lof
+*.lot
+*.out
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.gz
+
+# Archivos de salida de LaTeX
+*.pdf
