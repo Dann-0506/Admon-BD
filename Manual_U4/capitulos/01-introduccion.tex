@@ -1,0 +1,446 @@
+\chapter{Introducci\'on}
+\recursoscapitulo{01-introduccion}
+
+\section{Descripci\'on del sistema}
+
+El sistema administra las inversiones documentadas mediante pagar\'es de inversi\'on con rendimientos mensuales.
+
+La empresa emite los pagar\'es a trav\'es de sus sucursales. Los clientes participan como inversionistas (acreedores) y, cuando existe, un aval garantiza el pago de las obligaciones de la empresa. El personal de la empresa es el \'unico que opera el sistema; los clientes y los avales no acceden directamente a la base de datos, sino que reciben de la empresa la informaci\'on que les corresponde. El pagar\'e establece los siguientes elementos:
+
+\begin{itemize}[leftmargin=*]
+	\item \textbf{Datos del pagar\'e:} n\'umero de pagar\'e, monto de la inversi\'on y su moneda, y el lugar y la fecha de suscripci\'on.
+	\item \textbf{Partes:} el emisor y el inversionista, cada uno con su nombre completo y domicilio.
+	\item \textbf{Fecha de vencimiento:} fecha en la que el emisor debe pagar la cantidad principal de la inversi\'on.
+	\item \textbf{Intereses ordinarios y pagos mensuales:} el emisor paga un inter\'es ordinario mensual a una tasa fija (o una tasa anual divisible entre doce), calculado sobre el saldo del capital insoluto. Los pagos se realizan de manera mensual y consecutiva en un d\'ia espec\'ifico de cada mes, y concluyen en la fecha de vencimiento junto con la devoluci\'on del capital principal.
+	\item \textbf{Intereses moratorios:} en caso de mora o retraso en el pago de cualquiera de las mensualidades de intereses o del capital principal, el emisor paga un inter\'es moratorio a una tasa mensual sobre los saldos vencidos y no pagados, desde la fecha de su vencimiento hasta su total liquidaci\'on.
+	\item \textbf{Disposiciones generales:} el pagar\'e se rige por la Ley General de T\'itulos y Operaciones de Cr\'edito, y las partes se someten a la jurisdicci\'on de los tribunales de una ciudad determinada.
+	\item \textbf{Aval (opcional):} persona que garantiza el pago de las obligaciones del emisor, con su nombre completo, domicilio e identificaci\'on.
+\end{itemize}
+
+\section{Objetivo general}
+
+Generar un esquema que permita tener un control adecuado de un sistema de inversiones, as\'i como la optimizaci\'on de las liquidaciones de las inversiones proporcionadas por los clientes. La base de datos deber\'a almacenar de manera adecuada los datos de los clientes, asegurando su integridad.
+
+\section{Objetivos espec\'ificos}
+
+\begin{enumerate}[leftmargin=*]
+	\item Consultar los datos de las personas que tengan inversiones otorgadas en un periodo, por nombre.
+	\item Consultar los datos de las inversiones que est\'en vencidas en un periodo.
+	\item Consultar los estados de cuenta de los inversionistas.
+	\item Consultar la inversi\'on y su tabla de inter\'es en un periodo.
+	\item Consultar las inversiones hechas en un periodo.
+\end{enumerate}
+
+\section{Consultas de los objetivos espec\'ificos}
+\label{sec:consultas-objetivos}
+
+Cada objetivo espec\'ifico se resuelve con una consulta que puede ejecutar cualquier rol de operaci\'on (gerente, ejecutivo, tesorer\'ia o auditor), ya que solo requiere el privilegio \nem{SELECT} sobre las tablas del negocio. Las capturas se toman con el usuario \nem{dmejia} despu\'es de las pruebas de alcance (secci\'on~\ref{sec:pruebas-alcance}), por lo que los resultados incluyen los registros creados en ellas.
+
+\paragraph{Par\'ametros.} Cada consulta inicia con una expresi\'on de tabla com\'un llamada \nem{parametros}, que re\'une los valores de entrada: el periodo, el nombre buscado, el cliente o el pagar\'e. Para hacer otra consulta solo se modifica esa parte. El resto de la consulta no cambia, y casi siempre es igual en ambos gestores.
+
+\paragraph{Fecha de corte.} El estado de una inversi\'on y los montos vencidos dependen del d\'ia en que se consultan. Por ello, las consultas no usan la fecha del sistema, sino una fecha de corte. En este manual es el 28 de octubre de 2026, la fecha de carga de los datos de prueba, con lo que los resultados mostrados son reproducibles. En la operaci\'on diaria, el par\'ametro toma el valor de \nem{CURRENT\us DATE}, que existe en ambos gestores.
+
+\paragraph{Criterios comunes.} Las consultas aplican las reglas de negocio del modelo conceptual:
+
+\begin{itemize}[leftmargin=*]
+	\item El estado de una inversi\'on es \textbf{liquidada} si tiene una liquidaci\'on registrada hasta la fecha de corte; \textbf{vencida} si no la tiene y su vencimiento es anterior a la fecha de corte; y \textbf{vigente} en los dem\'as casos.
+	\item El inter\'es de un periodo es exigible cuando su fecha final es anterior o igual a la fecha de corte. Un pago se toma en cuenta si su fecha es anterior o igual a la fecha de corte.
+	\item El inter\'es moratorio se calcula como en los datos de prueba: sobre la tasa moratoria mensual, en proporci\'on a los d\'ias de atraso y con meses de 30 d\'ias.
+\end{itemize}
+
+\paragraph{Diferencias entre gestores.} Solo tres consultas cambian de un gestor a otro: la b\'usqueda por nombre del objetivo~1, la resta de fechas del objetivo~2 y la presentaci\'on en formato vertical de los datos del pagar\'e del objetivo~4. Las dem\'as se ejecutan sin cambios en ambos gestores.
+
+\subsection{Objetivo 1}
+
+\textit{Consultar los datos de las personas que tengan inversiones otorgadas en un periodo, por nombre.}
+
+La consulta lista a los inversionistas que suscribieron al menos un pagar\'e en el periodo y cuyo nombre completo contiene el texto buscado. Devuelve un rengl\'on por persona, con sus datos, el n\'umero de inversiones del periodo y el capital total invertido. Si el nombre buscado es una cadena vac\'ia, la consulta devuelve a todas las personas con inversiones en el periodo.
+
+\paragraph{B\'usqueda sin acentos.} La intercalaci\'on de la base de datos en MySQL compara los textos sin distinguir may\'usculas, min\'usculas ni acentos (cap\'itulo de implementaci\'on f\'isica). PostgreSQL s\'i los distingue, por lo que su consulta normaliza ambos lados de la comparaci\'on: la funci\'on \nem{translate} sustituye las vocales acentuadas y la letra \~n por su letra base, y el operador \nem{ILIKE} compara sin distinguir may\'usculas. De esta forma, en ambos gestores la b\'usqueda \nem{jose} encuentra a ``Jos\'e Luis'' y la b\'usqueda \nem{nunez} a ``N\'u\~nez''. La funci\'on \nem{translate} forma parte del gestor, por lo que no requiere instalar extensiones.
+
+\paragraph{PostgreSQL.}
+
+\begin{verbatim}
+	WITH parametros AS (
+	  SELECT DATE '2025-01-01' AS fecha_inicial,
+	         DATE '2025-12-31' AS fecha_final,
+	         'jose'            AS nombre
+	)
+	SELECT c.cliente_num, c.cliente_rfc,
+	       CONCAT(c.cliente_nombre, ' ', c.cliente_apellido) AS cliente,
+	       c.cliente_direccion, c.cliente_telefono,
+	       COUNT(*) AS inversiones,
+	       SUM(i.inversion_capital) AS capital_total
+	FROM parametros p
+	  JOIN inversion i
+	    ON i.pagare_fecha BETWEEN p.fecha_inicial AND p.fecha_final
+	  JOIN cliente c ON c.cliente_num = i.cliente_num
+	WHERE translate(CONCAT(c.cliente_nombre, ' ', c.cliente_apellido),
+	                'ÁÉÍÓÚÜÑáéíóúüñ', 'AEIOUUNaeiouun')
+	      ILIKE translate(CONCAT('%', p.nombre, '%'),
+	                      'ÁÉÍÓÚÜÑáéíóúüñ', 'AEIOUUNaeiouun')
+	GROUP BY c.cliente_num
+	ORDER BY c.cliente_apellido, c.cliente_nombre;
+\end{verbatim}
+
+\paragraph{MySQL.}
+
+\begin{verbatim}
+	WITH parametros AS (
+	  SELECT DATE '2025-01-01' AS fecha_inicial,
+	         DATE '2025-12-31' AS fecha_final,
+	         'jose'            AS nombre
+	)
+	SELECT c.cliente_num, c.cliente_rfc,
+	       CONCAT(c.cliente_nombre, ' ', c.cliente_apellido) AS cliente,
+	       c.cliente_direccion, c.cliente_telefono,
+	       COUNT(*) AS inversiones,
+	       SUM(i.inversion_capital) AS capital_total
+	FROM parametros p
+	  JOIN inversion i
+	    ON i.pagare_fecha BETWEEN p.fecha_inicial AND p.fecha_final
+	  JOIN cliente c ON c.cliente_num = i.cliente_num
+	WHERE CONCAT(c.cliente_nombre, ' ', c.cliente_apellido)
+	      LIKE CONCAT('%', p.nombre, '%')
+	GROUP BY c.cliente_num
+	ORDER BY c.cliente_apellido, c.cliente_nombre;
+\end{verbatim}
+
+Con los par\'ametros del ejemplo, el a\~no 2025 y la b\'usqueda \nem{jose}, ambas consultas devuelven un rengl\'on: el cliente 1, con una inversi\'on de \$75{,}000.00. Con una b\'usqueda vac\'ia, devuelven a las 17 personas que suscribieron pagar\'es en 2025.
+
+\captura{pg-objetivo1.png}{Consulta del objetivo 1 en PostgreSQL}{pg-objetivo1}
+\captura{mysql-objetivo1.png}{Consulta del objetivo 1 en MySQL}{mysql-objetivo1}
+
+\subsection{Objetivo 2}
+
+\textit{Consultar los datos de las inversiones que est\'en vencidas en un periodo.}
+
+La consulta lista las inversiones cuya fecha de vencimiento cae dentro del periodo, ya pas\'o en la fecha de corte y no tienen una liquidaci\'on registrada; es decir, las inversiones que se encuentran en estado vencido. Para cada una muestra:
+
+\begin{itemize}[leftmargin=*]
+	\item \textbf{D\'ias vencida:} d\'ias transcurridos desde el vencimiento hasta la fecha de corte.
+	\item \textbf{Periodos sin pagar e inter\'es vencido:} periodos terminados antes de la fecha de corte que conservan un saldo, y la suma de esos saldos. Un periodo con pago parcial cuenta por su saldo restante.
+	\item \textbf{Mora estimada:} inter\'es moratorio que la empresa adeudar\'ia si liquidara en la fecha de corte. Corresponde al capital por los d\'ias desde el vencimiento, m\'as el saldo de cada periodo por los d\'ias desde su fecha final. Es un c\'alculo y no un valor almacenado: se registra hasta que la empresa lo paga, en \nem{pago} o en \nem{liquidacion}.
+\end{itemize}
+
+La expresi\'on \nem{saldo} calcula primero el saldo de cada periodo, y la consulta principal lo agrega por inversi\'on. La \'unica diferencia entre gestores es la resta de fechas: en PostgreSQL, restar dos fechas devuelve el n\'umero de d\'ias; en MySQL se utiliza la funci\'on \nem{DATEDIFF}.
+
+\paragraph{PostgreSQL.}
+
+\begin{verbatim}
+	WITH parametros AS (
+	  SELECT DATE '2025-01-01' AS fecha_inicial,
+	         DATE '2025-12-31' AS fecha_final,
+	         DATE '2026-10-28' AS fecha_corte
+	),
+	saldo AS (
+	  -- Saldo de interés de cada periodo vencido a la fecha de corte
+	  SELECT t.inversion_num, t.interes_fecha_final,
+	         t.interes_monto - COALESCE(SUM(g.pago_interes), 0) AS saldo
+	  FROM parametros p
+	    JOIN interes t ON t.interes_fecha_final < p.fecha_corte
+	    LEFT JOIN pago g
+	      ON g.inversion_num = t.inversion_num
+	     AND g.interes_fecha_inicial = t.interes_fecha_inicial
+	     AND g.pago_fecha <= p.fecha_corte
+	  GROUP BY t.inversion_num, t.interes_fecha_inicial,
+	           t.interes_fecha_final, t.interes_monto
+	)
+	SELECT i.inversion_num, i.pagare_num,
+	       CONCAT(c.cliente_nombre, ' ', c.cliente_apellido) AS cliente,
+	       s.sucursal_nombre,
+	       i.inversion_capital AS capital,
+	       i.inversion_fecha_vencimiento AS vencimiento,
+	       p.fecha_corte - i.inversion_fecha_vencimiento AS dias_vencida,
+	       SUM(CASE WHEN d.saldo > 0 THEN 1 ELSE 0 END) AS periodos_sin_pagar,
+	       SUM(d.saldo) AS interes_vencido,
+	       ROUND(i.inversion_capital * i.inversion_tasa_moratoria / 100
+	             * (p.fecha_corte - i.inversion_fecha_vencimiento) / 30
+	             + SUM(d.saldo * i.inversion_tasa_moratoria / 100
+	                   * (p.fecha_corte - d.interes_fecha_final) / 30), 2)
+	         AS mora_estimada
+	FROM parametros p
+	  JOIN inversion i
+	    ON i.inversion_fecha_vencimiento BETWEEN p.fecha_inicial AND p.fecha_final
+	   AND i.inversion_fecha_vencimiento < p.fecha_corte
+	  JOIN cliente c ON c.cliente_num = i.cliente_num
+	  JOIN sucursal s ON s.sucursal_num = i.sucursal_num
+	  JOIN saldo d ON d.inversion_num = i.inversion_num
+	WHERE NOT EXISTS (SELECT 1 FROM liquidacion l
+	                  WHERE l.inversion_num = i.inversion_num
+	                    AND l.liquidacion_fecha <= p.fecha_corte)
+	GROUP BY i.inversion_num, c.cliente_num, s.sucursal_num, p.fecha_corte
+	ORDER BY i.inversion_fecha_vencimiento;
+\end{verbatim}
+
+\paragraph{MySQL.}
+
+\begin{verbatim}
+	WITH parametros AS (
+	  SELECT DATE '2025-01-01' AS fecha_inicial,
+	         DATE '2025-12-31' AS fecha_final,
+	         DATE '2026-10-28' AS fecha_corte
+	),
+	saldo AS (
+	  -- Saldo de interés de cada periodo vencido a la fecha de corte
+	  SELECT t.inversion_num, t.interes_fecha_final,
+	         t.interes_monto - COALESCE(SUM(g.pago_interes), 0) AS saldo
+	  FROM parametros p
+	    JOIN interes t ON t.interes_fecha_final < p.fecha_corte
+	    LEFT JOIN pago g
+	      ON g.inversion_num = t.inversion_num
+	     AND g.interes_fecha_inicial = t.interes_fecha_inicial
+	     AND g.pago_fecha <= p.fecha_corte
+	  GROUP BY t.inversion_num, t.interes_fecha_inicial,
+	           t.interes_fecha_final, t.interes_monto
+	)
+	SELECT i.inversion_num, i.pagare_num,
+	       CONCAT(c.cliente_nombre, ' ', c.cliente_apellido) AS cliente,
+	       s.sucursal_nombre,
+	       i.inversion_capital AS capital,
+	       i.inversion_fecha_vencimiento AS vencimiento,
+	       DATEDIFF(p.fecha_corte, i.inversion_fecha_vencimiento) AS dias_vencida,
+	       SUM(CASE WHEN d.saldo > 0 THEN 1 ELSE 0 END) AS periodos_sin_pagar,
+	       SUM(d.saldo) AS interes_vencido,
+	       ROUND(i.inversion_capital * i.inversion_tasa_moratoria / 100
+	             * DATEDIFF(p.fecha_corte, i.inversion_fecha_vencimiento) / 30
+	             + SUM(d.saldo * i.inversion_tasa_moratoria / 100
+	                   * DATEDIFF(p.fecha_corte, d.interes_fecha_final) / 30), 2)
+	         AS mora_estimada
+	FROM parametros p
+	  JOIN inversion i
+	    ON i.inversion_fecha_vencimiento BETWEEN p.fecha_inicial AND p.fecha_final
+	   AND i.inversion_fecha_vencimiento < p.fecha_corte
+	  JOIN cliente c ON c.cliente_num = i.cliente_num
+	  JOIN sucursal s ON s.sucursal_num = i.sucursal_num
+	  JOIN saldo d ON d.inversion_num = i.inversion_num
+	WHERE NOT EXISTS (SELECT 1 FROM liquidacion l
+	                  WHERE l.inversion_num = i.inversion_num
+	                    AND l.liquidacion_fecha <= p.fecha_corte)
+	GROUP BY i.inversion_num, c.cliente_num, s.sucursal_num, p.fecha_corte
+	ORDER BY i.inversion_fecha_vencimiento;
+\end{verbatim}
+
+Con el periodo del ejemplo, el a\~no 2025, ambas consultas devuelven las inversiones 16, 18, 20 y 17, en ese orden de vencimiento. La inversi\'on 16 tiene un solo periodo sin pagar, porque la tesorer\'ia pag\'o el otro durante las pruebas de alcance. Su mora estimada es de \$201{,}700.00: $500{,}000 \times 2.5\mkern 3mu\% \times 480/30 = 200{,}000$ por el capital, m\'as $4{,}250 \times 2.5\mkern 3mu\% \times 480/30 = 1{,}700$ por el periodo pendiente.
+
+\captura{pg-objetivo2.png}{Consulta del objetivo 2 en PostgreSQL}{pg-objetivo2}
+\captura{mysql-objetivo2.png}{Consulta del objetivo 2 en MySQL}{mysql-objetivo2}
+
+\subsection{Objetivo 3}
+
+\textit{Consultar los estados de cuenta de los inversionistas.}
+
+El estado de cuenta de un inversionista, identificado por su RFC, muestra en la fecha de corte un rengl\'on por cada una de sus inversiones, con:
+
+\begin{itemize}[leftmargin=*]
+	\item El estado de la inversi\'on.
+	\item El inter\'es exigible, el pagado y el pendiente.
+	\item El inter\'es moratorio pagado, tanto en los pagos mensuales como en la liquidaci\'on.
+	\item El capital devuelto.
+\end{itemize}
+
+Los intereses exigibles y los pagos se suman en dos expresiones separadas, \nem{exigible} y \nem{pagado}, antes de unirlos a la inversi\'on. Si se unieran directamente \nem{interes} y \nem{pago}, cada pago se repetir\'ia por cada periodo de la inversi\'on y las sumas resultar\'ian multiplicadas. La consulta es igual en ambos gestores.
+
+\begin{verbatim}
+	WITH parametros AS (
+	  SELECT 'MEAP850304BV0'   AS cliente_rfc,
+	         DATE '2026-10-28' AS fecha_corte
+	),
+	exigible AS (
+	  -- Interés de los periodos que ya terminaron a la fecha de corte
+	  SELECT t.inversion_num, SUM(t.interes_monto) AS interes_exigible
+	  FROM parametros p
+	    JOIN cliente c ON c.cliente_rfc = p.cliente_rfc
+	    JOIN inversion i ON i.cliente_num = c.cliente_num
+	    JOIN interes t ON t.inversion_num = i.inversion_num
+	  WHERE t.interes_fecha_final <= p.fecha_corte
+	  GROUP BY t.inversion_num
+	),
+	pagado AS (
+	  SELECT g.inversion_num, SUM(g.pago_interes) AS interes_pagado,
+	         SUM(g.pago_mora) AS mora_pagada
+	  FROM parametros p
+	    JOIN cliente c ON c.cliente_rfc = p.cliente_rfc
+	    JOIN inversion i ON i.cliente_num = c.cliente_num
+	    JOIN pago g ON g.inversion_num = i.inversion_num
+	  WHERE g.pago_fecha <= p.fecha_corte
+	  GROUP BY g.inversion_num
+	)
+	SELECT i.inversion_num, i.pagare_num,
+	       i.pagare_fecha AS suscripcion,
+	       i.inversion_fecha_vencimiento AS vencimiento,
+	       i.inversion_capital AS capital,
+	       CASE WHEN l.inversion_num IS NOT NULL THEN 'Liquidada'
+	            WHEN i.inversion_fecha_vencimiento < p.fecha_corte THEN 'Vencida'
+	            ELSE 'Vigente'
+	       END AS estado,
+	       COALESCE(e.interes_exigible, 0.00) AS interes_exigible,
+	       COALESCE(g.interes_pagado, 0.00) AS interes_pagado,
+	       COALESCE(e.interes_exigible, 0.00) - COALESCE(g.interes_pagado, 0.00)
+	         AS interes_pendiente,
+	       COALESCE(g.mora_pagada, 0.00) + COALESCE(l.liquidacion_mora, 0.00)
+	         AS mora_pagada,
+	       COALESCE(l.liquidacion_capital, 0.00) AS capital_devuelto
+	FROM parametros p
+	  JOIN cliente c ON c.cliente_rfc = p.cliente_rfc
+	  JOIN inversion i ON i.cliente_num = c.cliente_num
+	  LEFT JOIN exigible e ON e.inversion_num = i.inversion_num
+	  LEFT JOIN pagado g ON g.inversion_num = i.inversion_num
+	  LEFT JOIN liquidacion l
+	    ON l.inversion_num = i.inversion_num
+	   AND l.liquidacion_fecha <= p.fecha_corte
+	WHERE i.pagare_fecha <= p.fecha_corte
+	ORDER BY i.pagare_fecha;
+\end{verbatim}
+
+El ejemplo corresponde a la clienta Patricia Mendoza Aguilar, que tiene dos inversiones. La inversi\'on 10 est\'a liquidada: se devolvi\'o con 20 d\'ias de atraso, con un inter\'es moratorio de $75{,}000 \times 2.5\mkern 3mu\% \times 20/30 = 1{,}250.00$. La inversi\'on 35 est\'a vigente y al corriente; su mora pagada de \$7.50 proviene del pago parcial del periodo de junio de 2026.
+
+\captura{pg-objetivo3.png}{Consulta del objetivo 3 en PostgreSQL}{pg-objetivo3}
+\captura{mysql-objetivo3.png}{Consulta del objetivo 3 en MySQL}{mysql-objetivo3}
+
+\subsection{Objetivo 4}
+
+\textit{Consultar la inversi\'on y su tabla de inter\'es en un periodo.}
+
+El objetivo se resuelve con dos consultas, que reciben el n\'umero de pagar\'e. La primera muestra los datos de la inversi\'on, que corresponden a los elementos del pagar\'e. Como devuelve un solo rengl\'on con muchas columnas, se presenta en formato vertical: en PostgreSQL con el comando \nem{\textbackslash x} de \nem{psql}, y en MySQL terminando la sentencia con \nem{\textbackslash G} en lugar del punto y coma. Cuando la inversi\'on no tiene aval, la consulta muestra ``Sin aval''.
+
+\paragraph{PostgreSQL.}
+
+\begin{verbatim}
+	\x on
+	WITH parametros AS (
+	  SELECT '0018/2024' AS pagare_num
+	)
+	SELECT i.inversion_num, i.pagare_num, i.pagare_fecha,
+	       s.sucursal_ciudad AS lugar_suscripcion,
+	       CONCAT(c.cliente_nombre, ' ', c.cliente_apellido) AS inversionista,
+	       CASE WHEN a.aval_num IS NULL THEN 'Sin aval'
+	            ELSE CONCAT(a.aval_nombre, ' ', a.aval_apellido)
+	       END AS aval,
+	       i.inversion_capital AS capital, i.inversion_moneda AS moneda,
+	       i.inversion_tasa AS tasa_mensual,
+	       i.inversion_tasa_moratoria AS tasa_moratoria,
+	       i.inversion_dia_pago AS dia_pago,
+	       i.inversion_fecha_vencimiento AS vencimiento,
+	       i.pagare_jurisdiccion AS jurisdiccion
+	FROM parametros p
+	  JOIN inversion i ON i.pagare_num = p.pagare_num
+	  JOIN sucursal s ON s.sucursal_num = i.sucursal_num
+	  JOIN cliente c ON c.cliente_num = i.cliente_num
+	  LEFT JOIN aval a ON a.aval_num = i.aval_num;
+	\x off
+\end{verbatim}
+
+\paragraph{MySQL.}
+
+\begin{verbatim}
+	WITH parametros AS (
+	  SELECT '0018/2024' AS pagare_num
+	)
+	SELECT i.inversion_num, i.pagare_num, i.pagare_fecha,
+	       s.sucursal_ciudad AS lugar_suscripcion,
+	       CONCAT(c.cliente_nombre, ' ', c.cliente_apellido) AS inversionista,
+	       CASE WHEN a.aval_num IS NULL THEN 'Sin aval'
+	            ELSE CONCAT(a.aval_nombre, ' ', a.aval_apellido)
+	       END AS aval,
+	       i.inversion_capital AS capital, i.inversion_moneda AS moneda,
+	       i.inversion_tasa AS tasa_mensual,
+	       i.inversion_tasa_moratoria AS tasa_moratoria,
+	       i.inversion_dia_pago AS dia_pago,
+	       i.inversion_fecha_vencimiento AS vencimiento,
+	       i.pagare_jurisdiccion AS jurisdiccion
+	FROM parametros p
+	  JOIN inversion i ON i.pagare_num = p.pagare_num
+	  JOIN sucursal s ON s.sucursal_num = i.sucursal_num
+	  JOIN cliente c ON c.cliente_num = i.cliente_num
+	  LEFT JOIN aval a ON a.aval_num = i.aval_num\G
+\end{verbatim}
+
+La segunda consulta, igual en ambos gestores, muestra los periodos de inter\'es cuya fecha final cae dentro del periodo consultado. Para cada uno indica el n\'umero de pagos, la fecha del \'ultimo, los montos pagados de inter\'es y de mora, el saldo y uno de los siguientes estados:
+
+\begin{itemize}[leftmargin=*]
+	\item \textbf{Pagado:} cubierto por completo a m\'as tardar en su fecha final.
+	\item \textbf{Pagado con atraso:} cubierto por completo, pero el \'ultimo pago fue posterior a su fecha final.
+	\item \textbf{Pago parcial:} tiene pagos, pero conserva un saldo.
+	\item \textbf{Vencido:} sin pagos y con la fecha final anterior a la fecha de corte.
+	\item \textbf{Por vencer:} sin pagos y con la fecha final igual o posterior a la fecha de corte.
+\end{itemize}
+
+\begin{verbatim}
+	WITH parametros AS (
+	  SELECT '0018/2024'       AS pagare_num,
+	         DATE '2025-06-01' AS fecha_inicial,
+	         DATE '2026-03-31' AS fecha_final,
+	         DATE '2026-10-28' AS fecha_corte
+	)
+	SELECT t.interes_fecha_inicial AS inicio, t.interes_fecha_final AS fin,
+	       t.interes_monto AS interes,
+	       COUNT(g.pago_fecha) AS pagos,
+	       MAX(g.pago_fecha) AS ultimo_pago,
+	       COALESCE(SUM(g.pago_interes), 0.00) AS pagado,
+	       COALESCE(SUM(g.pago_mora), 0.00) AS mora_pagada,
+	       t.interes_monto - COALESCE(SUM(g.pago_interes), 0.00) AS saldo,
+	       CASE WHEN COALESCE(SUM(g.pago_interes), 0) >= t.interes_monto THEN
+	              CASE WHEN MAX(g.pago_fecha) > t.interes_fecha_final
+	                   THEN 'Pagado con atraso' ELSE 'Pagado' END
+	            WHEN COALESCE(SUM(g.pago_interes), 0) > 0 THEN 'Pago parcial'
+	            WHEN t.interes_fecha_final < p.fecha_corte THEN 'Vencido'
+	            ELSE 'Por vencer'
+	       END AS estado
+	FROM parametros p
+	  JOIN inversion i ON i.pagare_num = p.pagare_num
+	  JOIN interes t
+	    ON t.inversion_num = i.inversion_num
+	   AND t.interes_fecha_final BETWEEN p.fecha_inicial AND p.fecha_final
+	  LEFT JOIN pago g
+	    ON g.inversion_num = t.inversion_num
+	   AND g.interes_fecha_inicial = t.interes_fecha_inicial
+	   AND g.pago_fecha <= p.fecha_corte
+	GROUP BY t.inversion_num, t.interes_fecha_inicial, t.interes_fecha_final,
+	         t.interes_monto, p.fecha_corte
+	ORDER BY t.interes_fecha_inicial;
+\end{verbatim}
+
+El ejemplo corresponde al pagar\'e \nem{0018/2024} (inversi\'on 21), que no tiene aval y est\'a vencido. Entre junio de 2025 y marzo de 2026 tiene diez periodos. El primero, que vence el 22 de junio de 2025, se pag\'o en dos partes y aparece como pagado con atraso. Los siete siguientes est\'an pagados, y los dos \'ultimos, vencidos sin pago.
+
+\captura{pg-objetivo4.png}{Consultas del objetivo 4 en PostgreSQL}{pg-objetivo4}
+\captura{mysql-objetivo4.png}{Consultas del objetivo 4 en MySQL}{mysql-objetivo4}
+
+\subsection{Objetivo 5}
+
+\textit{Consultar las inversiones hechas en un periodo.}
+
+La consulta lista los pagar\'es suscritos en el periodo, con la sucursal, el cliente, el capital, la tasa mensual, el plazo, la fecha de vencimiento y el estado de cada inversi\'on. El plazo se obtiene contando los periodos de su tabla de inter\'es, ya que cada inversi\'on tiene un periodo por cada mes de plazo. La consulta es igual en ambos gestores.
+
+\begin{verbatim}
+	WITH parametros AS (
+	  SELECT DATE '2026-01-01' AS fecha_inicial,
+	         DATE '2026-10-28' AS fecha_final,
+	         DATE '2026-10-28' AS fecha_corte
+	)
+	SELECT i.inversion_num, i.pagare_num, i.pagare_fecha AS suscripcion,
+	       s.sucursal_nombre,
+	       CONCAT(c.cliente_nombre, ' ', c.cliente_apellido) AS cliente,
+	       i.inversion_capital AS capital, i.inversion_tasa AS tasa,
+	       (SELECT COUNT(*) FROM interes t
+	        WHERE t.inversion_num = i.inversion_num) AS plazo_meses,
+	       i.inversion_fecha_vencimiento AS vencimiento,
+	       CASE WHEN l.inversion_num IS NOT NULL THEN 'Liquidada'
+	            WHEN i.inversion_fecha_vencimiento < p.fecha_corte THEN 'Vencida'
+	            ELSE 'Vigente'
+	       END AS estado
+	FROM parametros p
+	  JOIN inversion i
+	    ON i.pagare_fecha BETWEEN p.fecha_inicial AND p.fecha_final
+	  JOIN sucursal s ON s.sucursal_num = i.sucursal_num
+	  JOIN cliente c ON c.cliente_num = i.cliente_num
+	  LEFT JOIN liquidacion l
+	    ON l.inversion_num = i.inversion_num
+	   AND l.liquidacion_fecha <= p.fecha_corte
+	ORDER BY i.pagare_fecha;
+\end{verbatim}
+
+Del 1 de enero al 28 de octubre de 2026 se suscribieron seis pagar\'es. El \'ultimo, la inversi\'on 41, es el que registr\'o el ejecutivo durante las pruebas de alcance.
+
+\captura{pg-objetivo5.png}{Consulta del objetivo 5 en PostgreSQL}{pg-objetivo5}
+\captura{mysql-objetivo5.png}{Consulta del objetivo 5 en MySQL}{mysql-objetivo5}

@@ -1,0 +1,95 @@
+\documentclass[11pt,letterpaper]{report}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[spanish,es-tabla]{babel}
+\usepackage[margin=2cm]{geometry}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{xltabular}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{titlesec}
+\usepackage[hidelinks]{hyperref}
+
+\titleformat{\chapter}
+{\normalfont\LARGE\bfseries}
+{\thechapter.}{0.6em}{}
+\titlespacing*{\chapter}{0pt}{0pt}{1.5em}
+
+\newcommand{\nem}[1]{\texttt{#1}}
+\newcommand{\us}{\_\allowbreak{}}
+\newcommand{\bs}{\textbackslash\allowbreak{}}
+
+% Carpeta de imágenes del capítulo actual: cada capítulo la declara con
+% \recursoscapitulo{nombre} y sus imágenes se guardan en recursos/nombre/
+\newcommand{\dirrecursos}{recursos}
+\newcommand{\recursoscapitulo}[1]{\renewcommand{\dirrecursos}{recursos/#1}}
+
+% Captura o diagrama: \captura[ancho]{archivo}{título}{etiqueta}
+% El ancho es opcional (por defecto, el de la página).
+\newcommand{\captura}[4][\textwidth]{%
+	\begin{figure}[H]
+		\centering
+		\IfFileExists{\dirrecursos/#2}%
+		{\includegraphics[width=#1]{\dirrecursos/#2}}%
+		{\fbox{\parbox[c][4cm][c]{0.9\textwidth}{\centering\small
+					Imagen pendiente: \texttt{\dirrecursos/\detokenize{#2}}}}}
+		\caption{#3}
+		\label{fig:#4}
+	\end{figure}
+}
+
+\setlength{\emergencystretch}{2em}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\newcommand{\encabezadodiccionario}{%
+	\toprule
+	\textbf{Nemónico} & \textbf{Descripción} & \textbf{Dominio} &
+	\textbf{Formato} & \textbf{Rango} & \textbf{Nulo} &
+	\textbf{Llave} & \textbf{Referencia} \\
+	\midrule
+}
+
+\newenvironment{diccionario}[1]{%
+	\footnotesize
+	\setlength{\tabcolsep}{3pt}
+	\xltabular{\textwidth}{L{2.6cm} Y L{2.2cm} L{2.9cm} L{1.15cm} L{0.9cm} L{1.6cm} L{2.2cm}}
+	\caption{Diccionario de datos de la tabla \nem{#1}}\\
+	\encabezadodiccionario
+	\endfirsthead
+	\multicolumn{8}{l}{\textit{Continuación de la tabla \nem{#1}}}\\
+	\encabezadodiccionario
+	\endhead
+	\bottomrule
+	\endfoot
+}{%
+	\endxltabular
+}
+
+\begin{document}
+	\include{portada/portada.tex}
+	
+	\tableofcontents
+	\listoftables
+	\listoffigures
+	
+	\include{capitulos/01-introduccion.tex}
+	\include{capitulos/02-entorno.tex}
+	\include{capitulos/03-conceptual.tex}
+	\include{capitulos/04-diccionario.tex}
+	\include{capitulos/05-relacional.tex}
+	\include{capitulos/06-usuarios.tex}
+	\include{capitulos/07-implementacion.tex}
+	\include{capitulos/08-bitacora.tex}
+	\include{capitulos/09-tablespaces.tex}
+	\include{capitulos/10-multiinstancias.tex}
+	\include{capitulos/11-particiones.tex}
+	\include{capitulos/12-segmentacion.tex}
+	\include{capitulos/13-indices.tex}
+\end{document}

@@ -1,0 +1,253 @@
+\chapter{Usuarios y roles}
+\recursoscapitulo{06-usuarios}
+
+\section{Roles y matriz de privilegios}
+\label{sec:roles-matriz}
+
+Los roles del sistema corresponden a puestos reales que pueden existir en una empresa que emita pagar\'es de inversi\'on, en lugar de categorizarse \'unicamente por su capacidad global de consulta, inserci\'on o eliminaci\'on. Cada rol agrupa los privilegios de un puesto, y los usuarios individuales obtienen sus privilegios al recibir el rol correspondiente. Los clientes y los avales no cuentan con roles, ya que no acceden directamente a la base de datos.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Roles del sistema}
+	\label{tab:roles}
+	\begin{tabular}{@{}l L{3.4cm} L{8.2cm}@{}}
+		\toprule
+		\textbf{Rol} & \textbf{Puesto} & \textbf{Función en el sistema} \\
+		\midrule
+		\nem{rol\us admin\us bd}  & DBA & Responsable del esquema; crea y administra sus objetos y no opera el negocio. \\
+		\nem{rol\us gerente}    & Gerente de inversiones & Supervisa, corrige inversiones y administra los datos de la empresa, sus sucursales y los avales. \\
+		\nem{rol\us ejecutivo}  & Asesor o promotor & Da de alta clientes e inversiones y genera la tabla de interés. \\
+		\nem{rol\us tesoreria}  & Cajero o tesorería & Registra los pagos mensuales y la liquidación del capital. \\
+		\nem{rol\us auditor}    & Contralor o auditor & Solo lectura de todo, incluida la bitácora. \\
+		\nem{rol\us respaldo}   & Cuenta técnica & Solo los privilegios que necesitan \nem{pg\us dump} y \nem{mysqldump}. \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+
+La tabla~\ref{tab:matriz} muestra los privilegios de cada rol sobre las tablas del esquema (S = SELECT, I = INSERT, U = UPDATE, D = DELETE, X = EXECUTE).
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Matriz de privilegios por rol y tabla}
+	\label{tab:matriz}
+	\begin{tabular}{@{}l *{9}{c}@{}}
+		\toprule
+		\textbf{Rol} &
+		\nem{empresa} & \nem{sucursal} & \nem{cliente} & \nem{aval} & \nem{inversion} & \nem{interes} & \nem{pago} & \nem{liquidacion} & \nem{bitacora} \\
+		\midrule
+		\nem{rol\us admin\us bd}\textsuperscript{4} & Todos & Todos & Todos & Todos & Todos & Todos & Todos & Todos & Todos \\
+		\nem{rol\us gerente}   & S U & S I U & S U & S I U & S U D\textsuperscript{1} & S & S & S & --- \\
+		\nem{rol\us ejecutivo} & S & S & S I U\textsuperscript{2} & S & S I & S X\textsuperscript{3} & S & S & --- \\
+		\nem{rol\us tesoreria} & S & S & S & S & S & S & S I & S I & --- \\
+		\nem{rol\us auditor}   & S & S & S & S & S & S & S & S & S \\
+		\nem{rol\us respaldo}\textsuperscript{5} & S & S & S & S & S & S & S & S & S \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+\begin{small}
+	\begin{enumerate}[leftmargin=*,label=\textsuperscript{\arabic*}]
+		\item Solo puede eliminar inversiones sin intereses generados; la llave foránea con \nem{RESTRICT} lo impide en los demás casos.
+		\item UPDATE por columna: únicamente teléfono y dirección. El RFC y el nombre no se modifican.
+		\item El ejecutivo no inserta directamente en \nem{interes}: ejecuta el procedimiento \nem{generar\us tabla\us interes}, que recibe la clave de la inversión y calcula los periodos a partir del capital, la tasa, el día de pago y el vencimiento.
+		\item Como responsable del esquema, tiene todos los privilegios sobre sus objetos, incluido DDL. La forma en que los obtiene en cada gestor se describe en la sección~\ref{sec:admin-instancia}.
+		\item Además de SELECT, recibe los privilegios adicionales que requiere la herramienta de respaldo de cada gestor; se detallan en las secciones~\ref{sec:roles-pg} y~\ref{sec:roles-mysql}.
+	\end{enumerate}
+\end{small}
+
+\paragraph{Bit\'acora.} Ning\'un rol de operaci\'on tiene privilegios de INSERT, UPDATE o DELETE sobre la tabla \nem{bitacora}; \'unicamente los triggers escriben en ella. El DBA, como responsable del esquema, conserva control t\'ecnico sobre la tabla; por ello, sus acciones quedan registradas adem\'as en la bit\'acora de instancia, cuya configuraci\'on solo puede modificar el superusuario.
+
+\paragraph{Separaci\'on de funciones.} Quien da de alta la inversi\'on (\nem{rol\us ejecutivo}) no puede registrar pagos ni liquidaciones, y quien los registra (\nem{rol\us tesoreria}) no puede modificar las inversiones, por lo que el capital y las tasas quedan fuera de su alcance. Del mismo modo, el DBA administra la estructura de la base de datos, pero no participa en la operaci\'on del negocio.	
+
+\paragraph{Usuarios.} El personal accede directamente a la base de datos, sin una aplicación intermedia. Por ello, cada integrante del equipo cuenta con un usuario propio en el gestor, que recibe el rol de su puesto; de esta forma, la bitácora identifica a la persona que realizó cada operación y no solo el puesto desde el que la realizó. Si una persona cambia de puesto, basta con cambiar su rol, sin crear otra cuenta ni perder su historial. La única excepción es el usuario de respaldo, que no corresponde a una persona sino a la herramienta que genera los respaldos. La tabla~\ref{tab:usuarios} muestra los usuarios del sistema, con el mismo nombre en ambos gestores.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Usuarios del sistema}
+	\label{tab:usuarios}
+	\begin{tabular}{@{}l l L{7cm}@{}}
+		\toprule
+		\textbf{Usuario} & \textbf{Rol} & \textbf{Titular} \\
+		\midrule
+		\nem{dlandero} & \nem{rol\us admin\us bd} & Daniel Landero Arias \\
+		\nem{dmejia}   & \nem{rol\us gerente}   & Diego de Jesús Mejía Rodríguez \\
+		\nem{pzuniga}  & \nem{rol\us ejecutivo} & Pedro Armando Zúñiga Durán \\
+		\nem{xzaleta}  & \nem{rol\us tesoreria} & Ximena Zaleta Hernández \\
+		\nem{enovoa}   & \nem{rol\us auditor}   & Eduardo Novoa Siles \\
+		\nem{respaldo} & \nem{rol\us respaldo}  & Cuenta técnica \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+Los nombres de usuario se forman con la inicial del nombre y el primer apellido, sin acentos ni la letra ñ, para que sean válidos y se escriban igual en ambos gestores.
+
+\section{Administraci\'on de la instancia y de la base de datos}
+\label{sec:admin-instancia}
+
+La administraci\'on del sistema se divide en dos niveles. El superusuario de cada gestor (\nem{postgres} en PostgreSQL y \nem{root} en MySQL) administra la instancia, y el DBA (\nem{rol\us admin\us bd}) administra la base de datos y sus objetos. El superusuario no se utiliza para crear ni operar los objetos del esquema: su participaci\'on se limita a las tareas que requieran privilegios sobre la instancia completa.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Responsabilidades por nivel de administración}
+	\label{tab:responsabilidades}
+	\begin{tabular}{@{}L{3.6cm} L{6.2cm} L{6.2cm}@{}}
+		\toprule
+		& \textbf{Superusuario (instancia)} & \textbf{DBA (base de datos)} \\
+		\midrule
+		Cuenta & \nem{postgres} / \nem{root} & \nem{rol\us admin\us bd} \\
+		Alcance & Toda la instancia y todas sus bases de datos & Únicamente la base de datos del sistema \\
+		Instancias & Crea y configura las instancias, incluida la segunda instancia de cada gestor & --- \\
+		Configuración & Parámetros del servidor y bitácora de instancia & --- \\
+		Tablespaces & Crea los tablespaces y, en PostgreSQL, los asigna al DBA & Asigna las tablas a los tablespaces \\
+		Base de datos & Crea el rol del DBA y le otorga control sobre la base de datos & Crea el esquema, las tablas, los índices, las particiones y la segmentación \\
+		Objetos programados & --- & Crea los procedimientos, funciones, triggers y vistas \\
+		Roles y usuarios & Crea únicamente al DBA & Crea los roles y usuarios de operación y les otorga sus privilegios \\
+		Datos & --- & Carga los datos de prueba y los traslada a la segunda instancia \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+\paragraph{Propiedad de los objetos.} Los dos gestores manejan la propiedad de los objetos de forma distinta. En PostgreSQL cada objeto tiene dueño, que es el rol que lo crea o al que se le asigna con \nem{OWNER}. En MySQL las tablas no tienen dueño: pertenecen a la base de datos, y el control sobre ellas se obtiene mediante privilegios. Solo los procedimientos, triggers y vistas tienen un equivalente, el \nem{DEFINER}, que es la cuenta con cuyos privilegios se ejecutan.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Propiedad de los objetos en cada gestor}
+	\label{tab:propiedad}
+	\begin{tabular}{@{}L{3.6cm} L{6.2cm} L{6.2cm}@{}}
+		\toprule
+		\textbf{Objeto} & \textbf{PostgreSQL} & \textbf{MySQL} \\
+		\midrule
+		Instancia & Cuenta del servicio y superusuario \nem{postgres} & Cuenta del servicio y superusuario \nem{root} \\
+		Tablespaces & Creados por \nem{postgres}, con dueño \nem{rol\us admin\us bd} & Creados por \nem{root}; no tienen dueño \\
+		Base de datos & Dueño \nem{rol\us admin\us bd} & Sin dueño; \nem{rol\us admin\us bd} tiene todos los privilegios sobre ella \\
+		Esquema & Dueño \nem{rol\us admin\us bd} & Equivale a la base de datos \\
+		Tablas & Dueño \nem{rol\us admin\us bd} & Sin dueño; controlados mediante los privilegios del DBA \\
+		Procedimientos y funciones & Dueño \nem{rol\us admin\us bd} & \nem{DEFINER}: cuenta del DBA \\
+		Triggers & Su función tiene dueño \nem{rol\us admin\us bd} & \nem{DEFINER}: cuenta del DBA \\
+		Vistas & Dueño \nem{rol\us admin\us bd} & \nem{DEFINER}: cuenta del DBA \\
+		Rol del DBA & Creado por \nem{postgres} & Creado por \nem{root} \\
+		Roles y usuarios de operación & Creados por el DBA & Creados por el DBA \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+En PostgreSQL, el usuario de la persona que funge como DBA trabaja con \nem{SET ROLE rol\us admin\us bd}, de modo que los objetos quedan a nombre del rol y no de la persona. Si el DBA cambia, basta con otorgar el rol al nuevo usuario sin transferir la propiedad de ning\'un objeto. En MySQL, el \nem{DEFINER} debe ser una cuenta de usuario y no un rol, por lo que los objetos programados se definen con la cuenta del DBA.
+
+\section{Creaci\'on de roles y usuarios en PostgreSQL}
+\label{sec:roles-pg}
+
+En PostgreSQL, roles y usuarios son el mismo tipo de objeto; la diferencia es que un usuario tiene el atributo \nem{LOGIN}. Los roles de puesto se crean sin él, de modo que nadie puede iniciar sesión directamente como un puesto: solo a través de su usuario personal.
+
+\paragraph{Ejecutado por el superusuario.} De acuerdo con la sección~\ref{sec:admin-instancia}, el superusuario crea únicamente el rol del DBA y su usuario. El rol recibe el atributo \nem{CREATEROLE}, que le permite crear los demás roles y usuarios sin ser superusuario.
+
+\begin{verbatim}
+	CREATE ROLE rol_admin_bd NOLOGIN CREATEROLE;
+	CREATE USER dlandero WITH PASSWORD 'Dlandero#2026' IN ROLE rol_admin_bd;
+\end{verbatim}
+
+\paragraph{Ejecutado por el DBA.} Los atributos de un rol, como \nem{CREATEROLE}, no se heredan por pertenencia; se obtienen al asumir el rol con \nem{SET ROLE}. Esto coincide con la forma de trabajo descrita en la sección~\ref{sec:admin-instancia}: los roles creados quedan a nombre de \nem{rol\us admin\us bd} y no de la persona, y el gestor le concede automáticamente la facultad de asignarlos.
+
+\begin{verbatim}
+	SET ROLE rol_admin_bd;
+	
+	CREATE ROLE rol_gerente   NOLOGIN;
+	CREATE ROLE rol_ejecutivo NOLOGIN;
+	CREATE ROLE rol_tesoreria NOLOGIN;
+	CREATE ROLE rol_auditor   NOLOGIN;
+	CREATE ROLE rol_respaldo  NOLOGIN;
+	
+	CREATE USER dmejia   WITH PASSWORD 'Dmejia#2026'   IN ROLE rol_gerente;
+	CREATE USER pzuniga  WITH PASSWORD 'Pzuniga#2026'  IN ROLE rol_ejecutivo;
+	CREATE USER xzaleta  WITH PASSWORD 'Xzaleta#2026'  IN ROLE rol_tesoreria;
+	CREATE USER enovoa   WITH PASSWORD 'Enovoa#2026'   IN ROLE rol_auditor;
+	CREATE USER respaldo WITH PASSWORD 'Respaldo#2026' IN ROLE rol_respaldo;
+	
+	RESET ROLE;
+\end{verbatim}
+
+Los privilegios de cada rol sobre las tablas, incluidos los de \nem{rol\us respaldo}, se otorgan en la implementación física, una vez que las tablas existen. En PostgreSQL, \nem{pg\us dump} solo requiere lectura sobre las tablas y las secuencias del esquema, por lo que el usuario de respaldo no
+necesita privilegios sobre la instancia.
+
+Los roles, sus atributos y la pertenencia de cada usuario se consultan en el catálogo del gestor (figura~\ref{fig:pg-roles}):
+
+\begin{verbatim}
+	SELECT u.rolname AS usuario, r.rolname AS rol,
+	       u.rolcanlogin AS inicia_sesion, r.rolcreaterole AS crea_roles
+	FROM pg_auth_members m
+	  JOIN pg_roles u ON u.oid = m.member
+	  JOIN pg_roles r ON r.oid = m.roleid
+	WHERE r.rolname LIKE 'rol\_%'
+	ORDER BY r.rolname;
+\end{verbatim}
+
+\captura{pg-roles.png}{Roles y usuarios creados en PostgreSQL}{pg-roles}
+
+\section{Creaci\'on de roles y usuarios en MySQL}
+\label{sec:roles-mysql}
+
+En MySQL, los roles y los usuarios son objetos distintos, y los roles concedidos a un usuario permanecen inactivos hasta que se activan. Por ello, cada usuario se crea con su rol como rol por defecto (\nem{DEFAULT ROLE}), de modo que sus privilegios están disponibles desde el inicio de la sesión. Todos los usuarios se definen con el origen \nem{'\%'}, por las razones expuestas en la configuración del entorno.
+
+\paragraph{Ejecutado por el superusuario.} El superusuario crea el rol del DBA, le otorga el control total sobre la base de datos \nem{inversiones}, que en MySQL equivale a ser su dueño, y los privilegios necesarios para administrar roles y usuarios. MySQL permite otorgar privilegios sobre una base de datos que aún no existe, por lo que este paso puede realizarse antes de crearla.
+
+\begin{verbatim}
+	CREATE ROLE rol_admin_bd;
+	GRANT ALL PRIVILEGES ON inversiones.* TO rol_admin_bd WITH GRANT OPTION;
+	GRANT CREATE ROLE, CREATE USER, ROLE_ADMIN ON *.* TO rol_admin_bd;
+
+	CREATE USER 'dlandero'@'%' IDENTIFIED BY 'Dlandero#2026'
+	  DEFAULT ROLE rol_admin_bd;
+\end{verbatim}
+
+El privilegio \nem{CREATE USER} permite modificar cualquier cuenta. Sin embargo, \nem{root} posee el privilegio \nem{SYSTEM\us USER}, y una cuenta con ese privilegio solo puede ser modificada por otra que también lo tenga; como el DBA no lo posee, no puede alterar la cuenta del superusuario.
+
+\paragraph{Ejecutado por el DBA.} El DBA crea los roles de puesto y los
+usuarios del personal:
+
+\begin{verbatim}
+	CREATE ROLE rol_gerente, rol_ejecutivo, rol_tesoreria,
+	            rol_auditor, rol_respaldo;
+
+	CREATE USER 'dmejia'@'%'   IDENTIFIED BY 'Dmejia#2026'
+	  DEFAULT ROLE rol_gerente;
+	CREATE USER 'pzuniga'@'%'  IDENTIFIED BY 'Pzuniga#2026'
+	  DEFAULT ROLE rol_ejecutivo;
+	CREATE USER 'xzaleta'@'%'  IDENTIFIED BY 'Xzaleta#2026'
+	  DEFAULT ROLE rol_tesoreria;
+	CREATE USER 'enovoa'@'%'   IDENTIFIED BY 'Enovoa#2026'
+	  DEFAULT ROLE rol_auditor;
+	CREATE USER 'respaldo'@'%' IDENTIFIED BY 'Respaldo#2026'
+	  DEFAULT ROLE rol_respaldo;
+\end{verbatim}
+
+\paragraph{Privilegios de respaldo.} A diferencia de PostgreSQL, \nem{mysqldump} requiere privilegios adicionales a la lectura de datos. Los que corresponden a la base de datos los otorga el DBA; los que corresponden a toda la instancia los otorga el superusuario, de acuerdo con la división de la sección~\ref{sec:admin-instancia}:
+
+\begin{verbatim}
+	-- DBA: privilegios sobre la base de datos
+	GRANT SELECT, SHOW VIEW, TRIGGER, LOCK TABLES
+	  ON inversiones.* TO rol_respaldo;
+
+	-- Superusuario: privilegios sobre la instancia
+	GRANT PROCESS, SHOW_ROUTINE ON *.* TO rol_respaldo;
+\end{verbatim}
+
+\nem{SHOW VIEW} y \nem{TRIGGER} permiten respaldar la definición de las vistas y los triggers; \nem{LOCK TABLES}, bloquear las tablas para obtener una copia consistente; \nem{PROCESS}, leer la información de los tablespaces; y \nem{SHOW\us ROUTINE}, respaldar los procedimientos almacenados.
+
+Los roles concedidos y los roles por defecto de cada usuario se consultan en las
+tablas del sistema (figura~\ref{fig:mysql-roles}):
+
+\begin{verbatim}
+	SELECT TO_USER AS usuario, FROM_USER AS rol
+	FROM mysql.role_edges
+	ORDER BY FROM_USER;
+
+	SELECT USER AS usuario, DEFAULT_ROLE_USER AS rol_por_defecto
+	FROM mysql.default_roles;
+\end{verbatim}
+
+\captura{mysql-roles.png}{Roles y usuarios creados en MySQL}{mysql-roles}

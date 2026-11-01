@@ -1,0 +1,55 @@
+\chapter{Modelo relacional}
+\recursoscapitulo{05-relacional}
+
+El modelo relacional representa las tablas del esquema con sus atributos, tipos de dato, llaves y la cardinalidad de cada relaci\'on. Los tipos de dato corresponden al diccionario de datos; su equivalencia en cada gestor se detalla en la implementaci\'on f\'isica. El diagrama utiliza la notaci\'on de pata de gallo, cuyos s\'imbolos se describen en la tabla~\ref{tab:notacion-er}.
+
+\captura{diagrama_er.jpg}{Diagrama relacional del sistema}{diagrama-er}
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Notaci\'on del diagrama relacional}
+	\label{tab:notacion-er}
+	\begin{tabular}{@{}L{6.4cm} L{9.6cm}@{}}
+		\toprule
+		\textbf{Elemento} & \textbf{Significado} \\
+		\midrule
+		Dos barras & Exactamente uno (1) \\
+		C\'irculo y barra & Cero o uno (0..1) \\
+		Barra y pata de gallo & Uno o muchos (1..N) \\
+		C\'irculo y pata de gallo & Cero o muchos (0..N) \\
+		PK, AK, FK & Llave primaria, alterna y for\'anea; los atributos de la llave primaria se muestran en negritas \\
+		\nem{NULL} & El atributo acepta valores nulos \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+\clearpage
+
+Cada s\'imbolo se lee junto a la tabla en la que se encuentra e indica cu\'antos registros de esa tabla corresponden a un registro de la tabla del otro extremo.
+
+La tabla~\ref{tab:cardinalidades} describe la cardinalidad de cada relaci\'on. La primera cifra corresponde a la tabla referenciada y la segunda a la tabla que contiene la llave for\'anea.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Cardinalidad de las relaciones}
+	\label{tab:cardinalidades}
+	\begin{tabular}{@{}L{3.3cm} L{2.4cm} L{3.6cm} L{6.7cm}@{}}
+		\toprule
+		\textbf{Relación} & \textbf{Cardinalidad} & \textbf{Llave foránea} & \textbf{Interpretación} \\
+		\midrule
+		\nem{empresa} -- \nem{sucursal} & 1 : 1..N & \nem{sucursal.\allowbreak empresa\us rfc} & La empresa opera al menos una sucursal, y cada sucursal pertenece a la empresa. \\
+		\nem{sucursal} -- \nem{inversion} & 1 : 0..N & \nem{inversion.\allowbreak sucursal\us num} & Cada inversión se suscribe en una sola sucursal; una sucursal puede no tener inversiones. \\
+		\nem{cliente} -- \nem{inversion} & 1 : 0..N & \nem{inversion.\allowbreak cliente\us num} & Cada inversión pertenece a un solo cliente; un cliente puede tener varias inversiones o ninguna. \\
+		\nem{aval} -- \nem{inversion} & 0..1 : 0..N & \nem{inversion.\allowbreak aval\us num} & Una inversión puede tener un aval o ninguno, por lo que la llave foránea acepta nulos; un aval puede garantizar varias inversiones. \\
+		\nem{inversion} -- \nem{interes} & 1 : 1..N & \nem{interes.\allowbreak inversion\us num} & Cada inversión tiene un periodo de interés por cada mes de su plazo. \\
+		\nem{interes} -- \nem{pago} & 1 : 0..N & \nem{pago} (\nem{inversion\us num}, \nem{interes\us fecha\us inicial}) & Un periodo de interés puede estar pendiente de pago o cubrirse con uno o varios pagos. \\
+		\nem{inversion} -- \nem{liquidacion} & 1 : 0..1 & \nem{liquidacion.\allowbreak inversion\us num} & Una inversión se liquida una sola vez, por lo que la llave foránea es también la llave primaria; mientras no se liquida, no tiene registro. \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+La tabla \nem{bitacora} no se relaciona con las dem\'as tablas, ya que registra los cambios de todas ellas sin depender de su existencia.
+
+Las llaves for\'aneas garantizan el m\'aximo de cada relaci\'on y que todo registro referenciado exista. Los m\'inimos de uno en el lado de la tabla que contiene la llave for\'anea, es decir, que la empresa tenga al menos una sucursal, y que cada inversi\'on tenga su tabla de inter\'es, se garantizan mediante la operaci\'on del sistema: el gerente registra las sucursales de la empresa, y el procedimiento \nem{generar\us tabla\us interes} crea los periodos de cada inversi\'on al darla de alta.

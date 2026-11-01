@@ -1,0 +1,526 @@
+\chapter{Bitácora}
+\label{cap:bitacora}
+\recursoscapitulo{08-bitacora}
+
+La bitácora registra cada cambio efectivo en los datos del sistema: qué usuario lo hizo, cuándo, desde qué equipo, en qué tabla, con qué operación y cuáles eran los valores antes y después del cambio. Cubre las ocho tablas de datos del esquema; la propia \nem{bitacora} no se audita a sí misma. Su propósito es que el auditor pueda reconstruir la historia de cualquier registro, en particular de los montos de inversiones, pagos y liquidaciones, sin depender de la palabra de quien hizo el cambio.
+
+\section{Diseño de la bitácora}
+
+\paragraph{Registro por renglón.} Los triggers son \nem{FOR EACH ROW} y se ejecutan después de la operación (\nem{AFTER}). Así, una sentencia que afecta varios renglones deja un registro por cada uno, con sus valores propios. Por ejemplo, la generación de una tabla de interés de 12 periodos deja 12 registros. Ejecutarse después de la operación garantiza que solo se registren los cambios que pasaron todas las restricciones y validaciones.
+
+\paragraph{Misma transacción.} El registro de bitácora forma parte de la transacción que hizo el cambio. Si la transacción se revierte, el registro también desaparece, de modo que la bitácora no contiene cambios que nunca ocurrieron. Los intentos rechazados quedan en el registro del servidor configurado en el capítulo~\ref{cap:entorno} (ver tabla~\ref{tab:bitacora-registro}).
+
+\paragraph{Usuario de la sesión.} Los triggers se ejecutan con los permisos del dueño de los objetos (\nem{SECURITY DEFINER} en PostgreSQL y \nem{DEFINER} en MySQL). Por eso el usuario se obtiene de la sesión, y no del contexto de ejecución, que siempre sería el del DBA. Lo mismo ocurre con el procedimiento \nem{generar\us tabla\us interes}: los periodos que crea quedan registrados a nombre del ejecutivo que lo llamó.
+
+\paragraph{Valores en JSON.} Los valores anteriores y nuevos se guardan como un objeto JSON con todas las columnas del renglón. Una sola tabla de bitácora sirve así para las ocho tablas, sin una columna por cada atributo auditado. En una inserción solo hay valor nuevo y en una eliminación solo valor anterior.
+
+La tabla~\ref{tab:bitacora-campos} indica de dónde obtiene cada gestor el valor de cada campo.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Origen de los campos de la bitácora}
+	\label{tab:bitacora-campos}
+	\begin{tabular}{@{}L{4.2cm} L{5.6cm} L{6.2cm}@{}}
+		\toprule
+		\textbf{Campo} & \textbf{PostgreSQL} & \textbf{MySQL} \\
+		\midrule
+		\nem{bitacora\us num} & Identidad & \nem{AUTO\us INCREMENT} \\
+		\nem{bitacora\us fecha} & \nem{LOCALTIMESTAMP} & \nem{NOW()} \\
+		\nem{bitacora\us usuario} & \nem{session\us user} & Parte del usuario de \nem{USER()} \\
+		\nem{bitacora\us tabla} & \nem{TG\us TABLE\us NAME} & Literal en cada trigger \\
+		\nem{bitacora\us operacion} & \nem{TG\us OP} & Literal en cada trigger \\
+		\nem{bitacora\us ip} & \nem{inet\us client\us addr()} & Parte del equipo de \nem{USER()} \\
+		\nem{bitacora\us sesion} & \nem{pg\us backend\us pid()} & \nem{CONNECTION\us ID()} \\
+		\nem{bitacora\us query} & \nem{current\us query()} & \nem{PROCESSLIST\us INFO} de \nem{performance\us schema.\allowbreak threads} \\
+		\nem{bitacora\us dato\us anterior} & \nem{to\us jsonb(OLD)} & \nem{JSON\us OBJECT} con las columnas de \nem{OLD} \\
+		\nem{bitacora\us dato\us nuevo} & \nem{to\us jsonb(NEW)} & \nem{JSON\us OBJECT} con las columnas de \nem{NEW} \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+En MySQL, \nem{USER()} devuelve el usuario y el equipo con los que el cliente se autenticó, a diferencia de \nem{CURRENT\us USER()}, que dentro de un trigger devuelve el \nem{DEFINER}. Como el servidor no resuelve nombres (\nem{skip\us name\us resolve}), el equipo es la dirección IP del cliente.
+
+\paragraph{Bitácora y registro del servidor.} La bitácora no sustituye al registro del servidor configurado en el capítulo~\ref{cap:entorno}; se complementan, como muestra la tabla~\ref{tab:bitacora-registro}.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Bitácora y registro del servidor}
+	\label{tab:bitacora-registro}
+	\begin{tabular}{@{}L{5.4cm} L{5.3cm} L{5.3cm}@{}}
+		\toprule
+		\textbf{Evento} & \textbf{Bitácora} & \textbf{Registro del
+			servidor} \\
+		\midrule
+		Cambio de datos confirmado & Sí, con valores anteriores y nuevos & Sí,
+		solo la sentencia \\
+		Cambio revertido o rechazado & No & Sí \\
+		Conexiones y desconexiones & No & Sí \\
+		Cambios a la estructura (DDL) & No & Sí \\
+		Consulta desde SQL & Sí, el auditor la consulta como una tabla & No, se revisa en los
+		archivos del servidor \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+\paragraph{Protección.} Ningún rol tiene privilegios de inserción, modificación o eliminación sobre \nem{bitacora}. Solo los triggers escriben en ella, con los permisos del dueño, y el auditor y la cuenta de respaldo solo pueden consultarla. Un trigger adicional rechaza cualquier \nem{UPDATE} o \nem{DELETE} sobre la bitácora, incluso del DBA, con lo que la tabla solo admite inserciones. El DBA podría desactivar ese trigger, pero hacerlo es un cambio de estructura que queda en el registro del servidor, que administra el superusuario. Las inserciones directas tampoco son posibles para los usuarios, porque ningún rol tiene \nem{INSERT} sobre la bitácora ni puede ejecutar la función o el procedimiento que la escribe.
+
+\section{PostgreSQL}
+
+Una sola función de trigger sirve para las ocho tablas, porque PostgreSQL expone el nombre de la tabla y la operación en las variables \nem{TG\us TABLE\us NAME} y \nem{TG\us OP}, y convierte el renglón completo a JSON con \nem{to\us jsonb}. La función es \nem{SECURITY DEFINER} para que inserte en la bitácora con los permisos de \nem{rol\us admin\us bd}. Las funciones de trigger no pueden llamarse directamente, por lo que nadie puede usarla para insertar registros falsos.
+
+\nem{session\us user} es el usuario que inició la sesión y no cambia con \nem{SET ROLE} ni dentro de una función \nem{SECURITY DEFINER}, a diferencia de \nem{current\us user}. \nem{current\us query()} devuelve la sentencia que envió el cliente; en los periodos generados por el procedimiento, es la llamada \nem{CALL generar\us tabla\us interes(\ldots)}.
+
+La sentencia \nem{TRUNCATE} no activa los triggers por renglón, así que la bitácora también la rechaza con un trigger por sentencia. Las demás tablas no lo necesitan: ningún rol tiene el privilegio \nem{TRUNCATE}.
+
+\begin{verbatim}
+	-- Ejecutado por dlandero en la base de datos inversiones
+	SET ROLE rol_admin_bd;
+
+	CREATE FUNCTION fn_bitacora()
+	RETURNS trigger
+	LANGUAGE plpgsql
+	SECURITY DEFINER
+	SET search_path = inversiones
+	AS $$
+	BEGIN
+	  INSERT INTO bitacora (bitacora_fecha, bitacora_usuario, bitacora_tabla,
+	                        bitacora_operacion, bitacora_ip, bitacora_sesion,
+	                        bitacora_query, bitacora_dato_anterior,
+	                        bitacora_dato_nuevo)
+	  VALUES (LOCALTIMESTAMP, session_user, TG_TABLE_NAME, TG_OP,
+	          host(inet_client_addr()), pg_backend_pid(), current_query(),
+	          CASE WHEN TG_OP IN ('UPDATE', 'DELETE') THEN to_jsonb(OLD) END,
+	          CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN to_jsonb(NEW) END);
+	  RETURN NULL;
+	END;
+	$$;
+
+	CREATE TRIGGER trg_empresa_bitacora
+	  AFTER INSERT OR UPDATE OR DELETE ON empresa
+	  FOR EACH ROW EXECUTE FUNCTION fn_bitacora();
+
+	CREATE TRIGGER trg_sucursal_bitacora
+	  AFTER INSERT OR UPDATE OR DELETE ON sucursal
+	  FOR EACH ROW EXECUTE FUNCTION fn_bitacora();
+
+	CREATE TRIGGER trg_cliente_bitacora
+	  AFTER INSERT OR UPDATE OR DELETE ON cliente
+	  FOR EACH ROW EXECUTE FUNCTION fn_bitacora();
+
+	CREATE TRIGGER trg_aval_bitacora
+	  AFTER INSERT OR UPDATE OR DELETE ON aval
+	  FOR EACH ROW EXECUTE FUNCTION fn_bitacora();
+
+	CREATE TRIGGER trg_inversion_bitacora
+	  AFTER INSERT OR UPDATE OR DELETE ON inversion
+	  FOR EACH ROW EXECUTE FUNCTION fn_bitacora();
+
+	CREATE TRIGGER trg_interes_bitacora
+	  AFTER INSERT OR UPDATE OR DELETE ON interes
+	  FOR EACH ROW EXECUTE FUNCTION fn_bitacora();
+
+	CREATE TRIGGER trg_pago_bitacora
+	  AFTER INSERT OR UPDATE OR DELETE ON pago
+	  FOR EACH ROW EXECUTE FUNCTION fn_bitacora();
+
+	CREATE TRIGGER trg_liquidacion_bitacora
+	  AFTER INSERT OR UPDATE OR DELETE ON liquidacion
+	  FOR EACH ROW EXECUTE FUNCTION fn_bitacora();
+
+	-- Protección de la bitácora
+	CREATE FUNCTION fn_bitacora_proteger()
+	RETURNS trigger
+	LANGUAGE plpgsql
+	AS $$
+	BEGIN
+	  RAISE EXCEPTION 'La bitácora no admite la operación %', TG_OP;
+	END;
+	$$;
+
+	CREATE TRIGGER trg_bitacora_proteger
+	  BEFORE UPDATE OR DELETE ON bitacora
+	  FOR EACH ROW EXECUTE FUNCTION fn_bitacora_proteger();
+
+	CREATE TRIGGER trg_bitacora_truncate
+	  BEFORE TRUNCATE ON bitacora
+	  FOR EACH STATEMENT EXECUTE FUNCTION fn_bitacora_proteger();
+\end{verbatim}
+
+La consulta siguiente lista los triggers del esquema. Es igual en ambos
+gestores.
+
+\begin{verbatim}
+	SELECT event_object_table, trigger_name, action_timing,
+	       event_manipulation
+	FROM information_schema.triggers
+	WHERE trigger_schema = 'inversiones'
+	ORDER BY event_object_table, trigger_name, event_manipulation;
+\end{verbatim}
+
+\captura{pg-bitacora-triggers.png}{Triggers de bitácora en PostgreSQL}{pg-bitacora-triggers}
+
+\section{MySQL}
+
+MySQL requiere un trigger por cada operación y no puede convertir un renglón completo a JSON, por lo que cada trigger enumera las columnas de su tabla con \nem{JSON\us OBJECT}. Para no repetir en los 24 triggers la obtención del usuario, el equipo, la sesión y la sentencia, los triggers llaman a un procedimiento, \nem{registrar\us bitacora}, que hace la inserción. Los triggers y el procedimiento se ejecutan con los permisos de su \nem{DEFINER}, el DBA. Ningún rol tiene \nem{EXECUTE} sobre \nem{registrar\us bitacora}, de modo que los usuarios no pueden llamarlo directamente.
+
+MySQL no tiene una función equivalente a \nem{current\us query()}. La sentencia que ejecuta cada conexión se obtiene de la columna \nem{PROCESSLIST\us INFO} de la tabla \nem{performance\us schema.\allowbreak threads}, buscando la conexión actual con \nem{CONNECTION\us ID()}. Esta tabla está disponible porque \nem{performance\us schema} se mantiene activado, que es su valor por defecto. Ese esquema está fuera de la base de datos \nem{inversiones}, así que el permiso de consulta lo otorga el superusuario:
+
+\begin{verbatim}
+	-- Ejecutado por root
+	GRANT SELECT ON performance_schema.threads TO rol_admin_bd;
+\end{verbatim}
+
+Hay dos diferencias con PostgreSQL. Primero, las acciones en cascada de las llaves foráneas no activan triggers en MySQL. Si cambia el RFC de la empresa, la bitácora registra la actualización de \nem{empresa}, pero no la de cada sucursal que se actualiza en cascada. Segundo, la sentencia \nem{TRUNCATE} requiere el privilegio \nem{DROP}, que solo tiene el DBA, y queda en el registro general del servidor.
+
+\begin{verbatim}
+	-- Ejecutado por dlandero en la base de datos inversiones
+	CREATE DEFINER = CURRENT_USER PROCEDURE registrar_bitacora(
+	  IN p_tabla     VARCHAR(63),
+	  IN p_operacion VARCHAR(6),
+	  IN p_anterior  JSON,
+	  IN p_nuevo     JSON)
+	SQL SECURITY DEFINER
+	INSERT INTO bitacora (bitacora_fecha, bitacora_usuario, bitacora_tabla,
+	                      bitacora_operacion, bitacora_ip, bitacora_sesion,
+	                      bitacora_query, bitacora_dato_anterior,
+	                      bitacora_dato_nuevo)
+	VALUES (NOW(), SUBSTRING_INDEX(USER(), '@', 1), p_tabla, p_operacion,
+	        SUBSTRING_INDEX(USER(), '@', -1), CONNECTION_ID(),
+	        (SELECT PROCESSLIST_INFO
+	         FROM performance_schema.threads
+	         WHERE PROCESSLIST_ID = CONNECTION_ID()),
+	        p_anterior, p_nuevo);
+
+	-- empresa
+	CREATE TRIGGER trg_empresa_bitacora_ins AFTER INSERT ON empresa
+	FOR EACH ROW CALL registrar_bitacora('empresa', 'INSERT',
+	  NULL,
+	  JSON_OBJECT('empresa_rfc', NEW.empresa_rfc,
+	              'empresa_nombre', NEW.empresa_nombre,
+	              'empresa_direccion', NEW.empresa_direccion));
+
+	CREATE TRIGGER trg_empresa_bitacora_upd AFTER UPDATE ON empresa
+	FOR EACH ROW CALL registrar_bitacora('empresa', 'UPDATE',
+	  JSON_OBJECT('empresa_rfc', OLD.empresa_rfc,
+	              'empresa_nombre', OLD.empresa_nombre,
+	              'empresa_direccion', OLD.empresa_direccion),
+	  JSON_OBJECT('empresa_rfc', NEW.empresa_rfc,
+	              'empresa_nombre', NEW.empresa_nombre,
+	              'empresa_direccion', NEW.empresa_direccion));
+
+	CREATE TRIGGER trg_empresa_bitacora_del AFTER DELETE ON empresa
+	FOR EACH ROW CALL registrar_bitacora('empresa', 'DELETE',
+	  JSON_OBJECT('empresa_rfc', OLD.empresa_rfc,
+	              'empresa_nombre', OLD.empresa_nombre,
+	              'empresa_direccion', OLD.empresa_direccion),
+	  NULL);
+
+	-- sucursal
+	CREATE TRIGGER trg_sucursal_bitacora_ins AFTER INSERT ON sucursal
+	FOR EACH ROW CALL registrar_bitacora('sucursal', 'INSERT',
+	  NULL,
+	  JSON_OBJECT('sucursal_num', NEW.sucursal_num,
+	              'empresa_rfc', NEW.empresa_rfc,
+	              'sucursal_nombre', NEW.sucursal_nombre,
+	              'sucursal_ciudad', NEW.sucursal_ciudad,
+	              'sucursal_direccion', NEW.sucursal_direccion));
+
+	CREATE TRIGGER trg_sucursal_bitacora_upd AFTER UPDATE ON sucursal
+	FOR EACH ROW CALL registrar_bitacora('sucursal', 'UPDATE',
+	  JSON_OBJECT('sucursal_num', OLD.sucursal_num,
+	              'empresa_rfc', OLD.empresa_rfc,
+	              'sucursal_nombre', OLD.sucursal_nombre,
+	              'sucursal_ciudad', OLD.sucursal_ciudad,
+	              'sucursal_direccion', OLD.sucursal_direccion),
+	  JSON_OBJECT('sucursal_num', NEW.sucursal_num,
+	              'empresa_rfc', NEW.empresa_rfc,
+	              'sucursal_nombre', NEW.sucursal_nombre,
+	              'sucursal_ciudad', NEW.sucursal_ciudad,
+	              'sucursal_direccion', NEW.sucursal_direccion));
+
+	CREATE TRIGGER trg_sucursal_bitacora_del AFTER DELETE ON sucursal
+	FOR EACH ROW CALL registrar_bitacora('sucursal', 'DELETE',
+	  JSON_OBJECT('sucursal_num', OLD.sucursal_num,
+	              'empresa_rfc', OLD.empresa_rfc,
+	              'sucursal_nombre', OLD.sucursal_nombre,
+	              'sucursal_ciudad', OLD.sucursal_ciudad,
+	              'sucursal_direccion', OLD.sucursal_direccion),
+	  NULL);
+
+	-- cliente
+	CREATE TRIGGER trg_cliente_bitacora_ins AFTER INSERT ON cliente
+	FOR EACH ROW CALL registrar_bitacora('cliente', 'INSERT',
+	  NULL,
+	  JSON_OBJECT('cliente_num', NEW.cliente_num,
+	              'cliente_rfc', NEW.cliente_rfc,
+	              'cliente_nombre', NEW.cliente_nombre,
+	              'cliente_apellido', NEW.cliente_apellido,
+	              'cliente_direccion', NEW.cliente_direccion,
+	              'cliente_telefono', NEW.cliente_telefono));
+
+	CREATE TRIGGER trg_cliente_bitacora_upd AFTER UPDATE ON cliente
+	FOR EACH ROW CALL registrar_bitacora('cliente', 'UPDATE',
+	  JSON_OBJECT('cliente_num', OLD.cliente_num,
+	              'cliente_rfc', OLD.cliente_rfc,
+	              'cliente_nombre', OLD.cliente_nombre,
+	              'cliente_apellido', OLD.cliente_apellido,
+	              'cliente_direccion', OLD.cliente_direccion,
+	              'cliente_telefono', OLD.cliente_telefono),
+	  JSON_OBJECT('cliente_num', NEW.cliente_num,
+	              'cliente_rfc', NEW.cliente_rfc,
+	              'cliente_nombre', NEW.cliente_nombre,
+	              'cliente_apellido', NEW.cliente_apellido,
+	              'cliente_direccion', NEW.cliente_direccion,
+	              'cliente_telefono', NEW.cliente_telefono));
+
+	CREATE TRIGGER trg_cliente_bitacora_del AFTER DELETE ON cliente
+	FOR EACH ROW CALL registrar_bitacora('cliente', 'DELETE',
+	  JSON_OBJECT('cliente_num', OLD.cliente_num,
+	              'cliente_rfc', OLD.cliente_rfc,
+	              'cliente_nombre', OLD.cliente_nombre,
+	              'cliente_apellido', OLD.cliente_apellido,
+	              'cliente_direccion', OLD.cliente_direccion,
+	              'cliente_telefono', OLD.cliente_telefono),
+	  NULL);
+
+	-- aval
+	CREATE TRIGGER trg_aval_bitacora_ins AFTER INSERT ON aval
+	FOR EACH ROW CALL registrar_bitacora('aval', 'INSERT',
+	  NULL,
+	  JSON_OBJECT('aval_num', NEW.aval_num,
+	              'aval_rfc', NEW.aval_rfc,
+	              'aval_nombre', NEW.aval_nombre,
+	              'aval_apellido', NEW.aval_apellido,
+	              'aval_direccion', NEW.aval_direccion));
+
+	CREATE TRIGGER trg_aval_bitacora_upd AFTER UPDATE ON aval
+	FOR EACH ROW CALL registrar_bitacora('aval', 'UPDATE',
+	  JSON_OBJECT('aval_num', OLD.aval_num,
+	              'aval_rfc', OLD.aval_rfc,
+	              'aval_nombre', OLD.aval_nombre,
+	              'aval_apellido', OLD.aval_apellido,
+	              'aval_direccion', OLD.aval_direccion),
+	  JSON_OBJECT('aval_num', NEW.aval_num,
+	              'aval_rfc', NEW.aval_rfc,
+	              'aval_nombre', NEW.aval_nombre,
+	              'aval_apellido', NEW.aval_apellido,
+	              'aval_direccion', NEW.aval_direccion));
+
+	CREATE TRIGGER trg_aval_bitacora_del AFTER DELETE ON aval
+	FOR EACH ROW CALL registrar_bitacora('aval', 'DELETE',
+	  JSON_OBJECT('aval_num', OLD.aval_num,
+	              'aval_rfc', OLD.aval_rfc,
+	              'aval_nombre', OLD.aval_nombre,
+	              'aval_apellido', OLD.aval_apellido,
+	              'aval_direccion', OLD.aval_direccion),
+	  NULL);
+
+	-- inversion
+	CREATE TRIGGER trg_inversion_bitacora_ins AFTER INSERT ON inversion
+	FOR EACH ROW CALL registrar_bitacora('inversion', 'INSERT',
+	  NULL,
+	  JSON_OBJECT('inversion_num', NEW.inversion_num,
+	              'pagare_num', NEW.pagare_num,
+	              'sucursal_num', NEW.sucursal_num,
+	              'cliente_num', NEW.cliente_num,
+	              'aval_num', NEW.aval_num,
+	              'inversion_capital', NEW.inversion_capital,
+	              'inversion_tasa', NEW.inversion_tasa,
+	              'inversion_tasa_moratoria', NEW.inversion_tasa_moratoria,
+	              'inversion_dia_pago', NEW.inversion_dia_pago,
+	              'pagare_fecha', NEW.pagare_fecha,
+	              'inversion_moneda', NEW.inversion_moneda,
+	              'pagare_jurisdiccion', NEW.pagare_jurisdiccion,
+	              'inversion_fecha_vencimiento', NEW.inversion_fecha_vencimiento));
+
+	CREATE TRIGGER trg_inversion_bitacora_upd AFTER UPDATE ON inversion
+	FOR EACH ROW CALL registrar_bitacora('inversion', 'UPDATE',
+	  JSON_OBJECT('inversion_num', OLD.inversion_num,
+	              'pagare_num', OLD.pagare_num,
+	              'sucursal_num', OLD.sucursal_num,
+	              'cliente_num', OLD.cliente_num,
+	              'aval_num', OLD.aval_num,
+	              'inversion_capital', OLD.inversion_capital,
+	              'inversion_tasa', OLD.inversion_tasa,
+	              'inversion_tasa_moratoria', OLD.inversion_tasa_moratoria,
+	              'inversion_dia_pago', OLD.inversion_dia_pago,
+	              'pagare_fecha', OLD.pagare_fecha,
+	              'inversion_moneda', OLD.inversion_moneda,
+	              'pagare_jurisdiccion', OLD.pagare_jurisdiccion,
+	              'inversion_fecha_vencimiento', OLD.inversion_fecha_vencimiento),
+	  JSON_OBJECT('inversion_num', NEW.inversion_num,
+	              'pagare_num', NEW.pagare_num,
+	              'sucursal_num', NEW.sucursal_num,
+	              'cliente_num', NEW.cliente_num,
+	              'aval_num', NEW.aval_num,
+	              'inversion_capital', NEW.inversion_capital,
+	              'inversion_tasa', NEW.inversion_tasa,
+	              'inversion_tasa_moratoria', NEW.inversion_tasa_moratoria,
+	              'inversion_dia_pago', NEW.inversion_dia_pago,
+	              'pagare_fecha', NEW.pagare_fecha,
+	              'inversion_moneda', NEW.inversion_moneda,
+	              'pagare_jurisdiccion', NEW.pagare_jurisdiccion,
+	              'inversion_fecha_vencimiento', NEW.inversion_fecha_vencimiento));
+
+	CREATE TRIGGER trg_inversion_bitacora_del AFTER DELETE ON inversion
+	FOR EACH ROW CALL registrar_bitacora('inversion', 'DELETE',
+	  JSON_OBJECT('inversion_num', OLD.inversion_num,
+	              'pagare_num', OLD.pagare_num,
+	              'sucursal_num', OLD.sucursal_num,
+	              'cliente_num', OLD.cliente_num,
+	              'aval_num', OLD.aval_num,
+	              'inversion_capital', OLD.inversion_capital,
+	              'inversion_tasa', OLD.inversion_tasa,
+	              'inversion_tasa_moratoria', OLD.inversion_tasa_moratoria,
+	              'inversion_dia_pago', OLD.inversion_dia_pago,
+	              'pagare_fecha', OLD.pagare_fecha,
+	              'inversion_moneda', OLD.inversion_moneda,
+	              'pagare_jurisdiccion', OLD.pagare_jurisdiccion,
+	              'inversion_fecha_vencimiento', OLD.inversion_fecha_vencimiento),
+	  NULL);
+
+	-- interes
+	CREATE TRIGGER trg_interes_bitacora_ins AFTER INSERT ON interes
+	FOR EACH ROW CALL registrar_bitacora('interes', 'INSERT',
+	  NULL,
+	  JSON_OBJECT('inversion_num', NEW.inversion_num,
+	              'interes_fecha_inicial', NEW.interes_fecha_inicial,
+	              'interes_fecha_final', NEW.interes_fecha_final,
+	              'interes_monto', NEW.interes_monto));
+
+	CREATE TRIGGER trg_interes_bitacora_upd AFTER UPDATE ON interes
+	FOR EACH ROW CALL registrar_bitacora('interes', 'UPDATE',
+	  JSON_OBJECT('inversion_num', OLD.inversion_num,
+	              'interes_fecha_inicial', OLD.interes_fecha_inicial,
+	              'interes_fecha_final', OLD.interes_fecha_final,
+	              'interes_monto', OLD.interes_monto),
+	  JSON_OBJECT('inversion_num', NEW.inversion_num,
+	              'interes_fecha_inicial', NEW.interes_fecha_inicial,
+	              'interes_fecha_final', NEW.interes_fecha_final,
+	              'interes_monto', NEW.interes_monto));
+
+	CREATE TRIGGER trg_interes_bitacora_del AFTER DELETE ON interes
+	FOR EACH ROW CALL registrar_bitacora('interes', 'DELETE',
+	  JSON_OBJECT('inversion_num', OLD.inversion_num,
+	              'interes_fecha_inicial', OLD.interes_fecha_inicial,
+	              'interes_fecha_final', OLD.interes_fecha_final,
+	              'interes_monto', OLD.interes_monto),
+	  NULL);
+
+	-- pago
+	CREATE TRIGGER trg_pago_bitacora_ins AFTER INSERT ON pago
+	FOR EACH ROW CALL registrar_bitacora('pago', 'INSERT',
+	  NULL,
+	  JSON_OBJECT('inversion_num', NEW.inversion_num,
+	              'interes_fecha_inicial', NEW.interes_fecha_inicial,
+	              'pago_fecha', NEW.pago_fecha,
+	              'pago_interes', NEW.pago_interes,
+	              'pago_mora', NEW.pago_mora));
+
+	CREATE TRIGGER trg_pago_bitacora_upd AFTER UPDATE ON pago
+	FOR EACH ROW CALL registrar_bitacora('pago', 'UPDATE',
+	  JSON_OBJECT('inversion_num', OLD.inversion_num,
+	              'interes_fecha_inicial', OLD.interes_fecha_inicial,
+	              'pago_fecha', OLD.pago_fecha,
+	              'pago_interes', OLD.pago_interes,
+	              'pago_mora', OLD.pago_mora),
+	  JSON_OBJECT('inversion_num', NEW.inversion_num,
+	              'interes_fecha_inicial', NEW.interes_fecha_inicial,
+	              'pago_fecha', NEW.pago_fecha,
+	              'pago_interes', NEW.pago_interes,
+	              'pago_mora', NEW.pago_mora));
+
+	CREATE TRIGGER trg_pago_bitacora_del AFTER DELETE ON pago
+	FOR EACH ROW CALL registrar_bitacora('pago', 'DELETE',
+	  JSON_OBJECT('inversion_num', OLD.inversion_num,
+	              'interes_fecha_inicial', OLD.interes_fecha_inicial,
+	              'pago_fecha', OLD.pago_fecha,
+	              'pago_interes', OLD.pago_interes,
+	              'pago_mora', OLD.pago_mora),
+	  NULL);
+
+	-- liquidacion
+	CREATE TRIGGER trg_liquidacion_bitacora_ins AFTER INSERT ON liquidacion
+	FOR EACH ROW CALL registrar_bitacora('liquidacion', 'INSERT',
+	  NULL,
+	  JSON_OBJECT('inversion_num', NEW.inversion_num,
+	              'liquidacion_fecha', NEW.liquidacion_fecha,
+	              'liquidacion_capital', NEW.liquidacion_capital,
+	              'liquidacion_mora', NEW.liquidacion_mora));
+
+	CREATE TRIGGER trg_liquidacion_bitacora_upd AFTER UPDATE ON liquidacion
+	FOR EACH ROW CALL registrar_bitacora('liquidacion', 'UPDATE',
+	  JSON_OBJECT('inversion_num', OLD.inversion_num,
+	              'liquidacion_fecha', OLD.liquidacion_fecha,
+	              'liquidacion_capital', OLD.liquidacion_capital,
+	              'liquidacion_mora', OLD.liquidacion_mora),
+	  JSON_OBJECT('inversion_num', NEW.inversion_num,
+	              'liquidacion_fecha', NEW.liquidacion_fecha,
+	              'liquidacion_capital', NEW.liquidacion_capital,
+	              'liquidacion_mora', NEW.liquidacion_mora));
+
+	CREATE TRIGGER trg_liquidacion_bitacora_del AFTER DELETE ON liquidacion
+	FOR EACH ROW CALL registrar_bitacora('liquidacion', 'DELETE',
+	  JSON_OBJECT('inversion_num', OLD.inversion_num,
+	              'liquidacion_fecha', OLD.liquidacion_fecha,
+	              'liquidacion_capital', OLD.liquidacion_capital,
+	              'liquidacion_mora', OLD.liquidacion_mora),
+	  NULL);
+
+	-- Protección de la bitácora
+	CREATE TRIGGER trg_bitacora_proteger_upd BEFORE UPDATE ON bitacora
+	FOR EACH ROW SIGNAL SQLSTATE '45000'
+	  SET MESSAGE_TEXT = 'La bitácora no admite la operación UPDATE';
+
+	CREATE TRIGGER trg_bitacora_proteger_del BEFORE DELETE ON bitacora
+	FOR EACH ROW SIGNAL SQLSTATE '45000'
+	  SET MESSAGE_TEXT = 'La bitácora no admite la operación DELETE';
+\end{verbatim}
+
+\captura{mysql-bitacora-triggers.png}{Triggers de bitácora en MySQL}{mysql-bitacora-triggers}
+
+\section{Registro de las pruebas de alcance}
+
+Las pruebas de alcance de la sección~\ref{sec:pruebas-alcance} se ejecutan después de crear la bitácora, de modo que sus operaciones permitidas quedan registradas con el usuario de cada prueba. Las operaciones denegadas no dejan registro. La tabla~\ref{tab:bitacora-pruebas} muestra los 17 registros esperados. La numeración puede tener huecos, porque una inserción revertida también consume un número de \nem{bitacora\us num}.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Registros de bitácora esperados tras las pruebas de alcance}
+	\label{tab:bitacora-pruebas}
+	\begin{tabular}{@{}l l l r L{6.2cm}@{}}
+		\toprule
+		\textbf{Usuario} & \textbf{Tabla} & \textbf{Operación} &
+		\textbf{Registros} & \textbf{Origen} \\
+		\midrule
+		\nem{dmejia} & \nem{sucursal} & \nem{UPDATE} & 1 & Dirección de la
+		sucursal 15 \\
+		\nem{pzuniga} & \nem{cliente} & \nem{INSERT} & 1 & Cliente 26 \\
+		\nem{pzuniga} & \nem{inversion} & \nem{INSERT} & 1 & Inversión 41 \\
+		\nem{pzuniga} & \nem{interes} & \nem{INSERT} & 12 & Periodos generados
+		por el procedimiento \\
+		\nem{pzuniga} & \nem{cliente} & \nem{UPDATE} & 1 & Teléfono del
+		cliente 26 \\
+		\nem{xzaleta} & \nem{pago} & \nem{INSERT} & 1 & Pago tardío de la
+		inversión 16 \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+El auditor consulta los registros con:
+
+\begin{verbatim}
+	SELECT bitacora_num, bitacora_fecha, bitacora_usuario, bitacora_ip,
+	       bitacora_sesion, bitacora_tabla, bitacora_operacion
+	FROM bitacora
+	ORDER BY bitacora_num;
+
+	SELECT bitacora_dato_anterior, bitacora_dato_nuevo
+	FROM bitacora
+	WHERE bitacora_tabla = 'cliente' AND bitacora_operacion = 'UPDATE';
+\end{verbatim}
+
+\captura{pg-bitacora-registros.png}{Registros de bitácora en PostgreSQL}{pg-bitacora-registros}
+\captura{mysql-bitacora-registros.png}{Registros de bitácora en MySQL}{mysql-bitacora-registros}

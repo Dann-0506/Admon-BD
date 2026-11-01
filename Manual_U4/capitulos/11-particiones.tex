@@ -1,0 +1,379 @@
+\chapter{Particionamiento}
+\label{cap:particionamiento}
+\recursoscapitulo{11-particiones}
+
+El particionamiento divide físicamente una tabla en partes llamadas particiones, cada una con un subconjunto de sus filas, según el valor de una columna llamada clave de partición. Para los usuarios, la tabla sigue siendo una sola: se consulta y se modifica con su nombre, y el gestor dirige cada fila a su partición. Cuando una consulta filtra por la clave de partición, el gestor lee únicamente las particiones que pueden contener las filas buscadas, lo que se conoce como poda de particiones.
+
+El particionamiento se aplica en la segunda instancia de cada gestor, que hasta este punto es una copia exacta de la primera (capítulo~\ref{cap:multiinstancias}). Por ello, no se crean tablas nuevas, sino que se convierten las tablas existentes, con sus datos.
+
+\section{Dise\~no de las particiones}
+
+\paragraph{Tablas particionadas.} Se particionan las dos tablas que crecen de forma continua y que se consultan por periodos:
+
+\begin{itemize}[leftmargin=*]
+	\item \nem{pago}: recibe un registro por cada mes de cada inversión, por lo que es la tabla que más crece con la operación. Los estados de cuenta y las tablas de interés se consultan por periodos de fechas.
+	\item \nem{bitacora}: recibe un registro por cada cambio en los datos y nunca elimina registros. El auditor la revisa por periodos.
+\end{itemize}
+
+\paragraph{Criterio.} Ambas tablas se particionan por rango de fechas, con una partición por año. La clave de partición es \nem{pago\us fecha} en \nem{pago} y \nem{bitacora\us fecha} en \nem{bitacora}. Ambos gestores exigen que la clave de partición forme parte de la llave primaria, ya que cada partición verifica la unicidad de sus propias filas; por ese motivo, las llaves primarias de ambas tablas incluyen su fecha desde el modelo conceptual.
+
+\paragraph{Particiones.} Las particiones de \nem{pago} corresponden a los años de los datos de prueba, y las de \nem{bitacora}, a los años en que el sistema ha registrado o registrará cambios, ya que la bitácora inicia su operación en 2026. La primera partición de cada tabla recibe también las fechas anteriores a su año, y la última, todas las posteriores, de modo que ninguna fecha queda sin partición (tabla~\ref{tab:particiones}). Las particiones tienen el mismo nombre en ambos gestores.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Particiones de \nem{pago} y \nem{bitacora}}
+	\label{tab:particiones}
+	\begin{tabular}{@{}L{3.4cm} L{6cm} L{2.6cm} r@{}}
+		\toprule
+		\textbf{Partición} & \textbf{Fechas} & \textbf{Tablespace (PostgreSQL)} & \textbf{Registros} \\
+		\midrule
+		\nem{pago\us 2024} & Anteriores al 1 de enero de 2025 & \nem{ts\us operacion} & 74 \\
+		\nem{pago\us 2025} & Del 1 de enero al 31 de diciembre de 2025 & \nem{ts\us operacion} & 237 \\
+		\nem{pago\us 2026} & Del 1 de enero al 31 de diciembre de 2026 & \nem{ts\us operacion} & 168 \\
+		\nem{pago\us posterior} & A partir del 1 de enero de 2027 & \nem{ts\us operacion} & 0 \\
+		\midrule
+		\nem{bitacora\us 2026} & Anteriores al 1 de enero de 2027 & \nem{ts\us bitacora} & 17 \\
+		\nem{bitacora\us 2027} & Del 1 de enero al 31 de diciembre de 2027 & \nem{ts\us bitacora} & 0 \\
+		\nem{bitacora\us posterior} & A partir del 1 de enero de 2028 & \nem{ts\us bitacora} & 0 \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+Los 168 pagos de 2026 incluyen el que registró la tesorería durante las pruebas de alcance, y los 17 registros de la bitácora son los que dejaron esas pruebas en 2026. En MySQL, las particiones permanecen en el directorio de datos, ya que una tabla particionada no puede ubicarse en un tablespace general (capítulo~\ref{cap:tablespaces}).
+
+\paragraph{Mantenimiento.} La partición posterior evita que una inserción falle por no tener partición, pero no debe acumular registros de varios años. Antes de que inicie un nuevo año, el DBA divide la partición posterior para crear la del año siguiente: en \nem{pago}, antes del 1 de enero de 2027; en \nem{bitacora}, antes del 1 de enero de 2028. Mientras la partición posterior está vacía, la división es inmediata. Del mismo modo, cuando la bitácora de un año ya no se necesita en línea, su partición puede desprenderse de la tabla y respaldarse por separado. Esta es la única forma de retirar registros de la bitácora, ya que su trigger de protección impide eliminarlos con \nem{DELETE}; al tratarse de un cambio de estructura, queda en el registro del servidor.
+
+\paragraph{Conversión de las tablas.} Los gestores difieren en la forma de convertir una tabla existente:
+
+\begin{itemize}[leftmargin=*]
+	\item \textbf{PostgreSQL} no permite convertir una tabla en particionada. Se crea una tabla particionada nueva, se copian los datos y se elimina la original, dentro de una sola transacción. La nueva tabla conserva la llave foránea de \nem{pago}, porque PostgreSQL admite llaves foráneas en tablas particionadas, pero sus triggers y privilegios deben volver a crearse.
+	\item \textbf{MySQL} convierte la tabla sin reemplazarla, con \nem{ALTER TABLE \ldots{} PARTITION BY}, y conserva sus triggers, privilegios y numeración. Sin embargo, InnoDB no admite llaves foráneas en tablas particionadas, por lo que la llave foránea de \nem{pago} se elimina y su regla se valida con triggers.
+\end{itemize}
+
+\section{Diagrama relacional con particiones}
+
+La figura~\ref{fig:diagrama-particiones} muestra las tablas particionadas de la segunda instancia, sus particiones y el tablespace de cada una. Las demás tablas y relaciones no cambian respecto al diagrama relacional, con una excepción en MySQL: la relación entre \nem{interes} y \nem{pago} ya no se garantiza con una llave foránea, sino con triggers.
+
+\captura{diagrama_particiones.jpg}{Diagrama relacional con particiones}{diagrama-particiones}
+
+\section{PostgreSQL}
+
+\paragraph{Conversión.} El DBA convierte ambas tablas en una sola transacción. Si cualquier paso falla, la transacción se revierte completa y las tablas originales quedan intactas; además, ningún usuario puede registrar cambios a mitad de la conversión, cuando las tablas originales ya cambiaron de nombre. El script sigue estos pasos:
+
+\begin{enumerate}[leftmargin=*]
+	\item Cambia el nombre de las tablas originales, de sus llaves primarias y de la secuencia de la bitácora, para liberar esos nombres. Las llaves primarias deben renombrarse porque crean un índice, y dos índices del mismo esquema no pueden tener el mismo nombre.
+	\item Crea las tablas particionadas, con la misma definición que en la implementación física más la cláusula \nem{PARTITION BY RANGE}, y sus particiones en los tablespaces del capítulo~\ref{cap:tablespaces}. Cada partición recibe un índice para la llave primaria, que el gestor nombra automáticamente (por ejemplo, \nem{pago\us 2024\us pkey}) y ubica en el tablespace indicado por \nem{USING INDEX TABLESPACE}.
+	\item Copia los datos, conservando sus llaves, y ajusta la secuencia de la bitácora al número más alto copiado.
+	\item Elimina las tablas originales.
+	\item Vuelve a crear los triggers de las nuevas tablas. La función de bitácora se reemplaza porque, en una tabla particionada, los triggers se ejecutan en cada partición, y \nem{TG\us TABLE\us NAME} devolvería, por ejemplo, \nem{pago\us 2026} en lugar de \nem{pago}. La función \nem{pg\us partition\us root} devuelve la tabla particionada a la que pertenece una partición, o un valor nulo si la tabla no está particionada; con \nem{COALESCE}, la función registra el nombre correcto en ambos casos.
+	\item Otorga los privilegios sobre \nem{pago}. El auditor y el usuario de respaldo reciben los de las nuevas tablas por los privilegios por defecto de la implementación física, pero estos no abarcan secuencias, y \nem{pg\us dump} necesita leer la nueva secuencia de la bitácora.
+\end{enumerate}
+
+Al final, \nem{ANALYZE} actualiza las estadísticas de las nuevas tablas, que el planificador utiliza para elegir sus planes de ejecución.
+
+\begin{verbatim}
+	-- Ejecutado por dlandero en la segunda instancia, base de datos inversiones
+	BEGIN;
+	SET ROLE rol_admin_bd;
+	
+	-- 1. Las tablas originales se conservan con otro nombre
+	ALTER TABLE pago RENAME TO pago_original;
+	ALTER TABLE pago_original RENAME CONSTRAINT pk_pago TO pk_pago_original;
+	ALTER TABLE bitacora RENAME TO bitacora_original;
+	ALTER TABLE bitacora_original
+	  RENAME CONSTRAINT pk_bitacora TO pk_bitacora_original;
+	ALTER SEQUENCE bitacora_bitacora_num_seq
+	  RENAME TO bitacora_original_bitacora_num_seq;
+	
+	-- 2. Tablas particionadas, con la misma definición
+	CREATE TABLE pago (
+	  inversion_num          INT           NOT NULL,
+	  interes_fecha_inicial  DATE          NOT NULL,
+	  pago_fecha             DATE          NOT NULL,
+	  pago_interes           NUMERIC(14,2) NOT NULL,
+	  pago_mora              NUMERIC(14,2) NOT NULL DEFAULT 0,
+	  CONSTRAINT pk_pago
+	    PRIMARY KEY (inversion_num, interes_fecha_inicial, pago_fecha)
+	    USING INDEX TABLESPACE ts_operacion,
+	  CONSTRAINT fk_pago_interes FOREIGN KEY (inversion_num, interes_fecha_inicial)
+	    REFERENCES interes (inversion_num, interes_fecha_inicial)
+	    ON DELETE RESTRICT ON UPDATE RESTRICT,
+	  CONSTRAINT ck_pago_montos CHECK (pago_interes >= 0 AND pago_mora >= 0)
+	) PARTITION BY RANGE (pago_fecha);
+	
+	CREATE TABLE pago_2024 PARTITION OF pago
+	  FOR VALUES FROM (MINVALUE) TO ('2025-01-01') TABLESPACE ts_operacion;
+	CREATE TABLE pago_2025 PARTITION OF pago
+	  FOR VALUES FROM ('2025-01-01') TO ('2026-01-01') TABLESPACE ts_operacion;
+	CREATE TABLE pago_2026 PARTITION OF pago
+	  FOR VALUES FROM ('2026-01-01') TO ('2027-01-01') TABLESPACE ts_operacion;
+	CREATE TABLE pago_posterior PARTITION OF pago
+	  FOR VALUES FROM ('2027-01-01') TO (MAXVALUE) TABLESPACE ts_operacion;
+	
+	CREATE TABLE bitacora (
+	  bitacora_num            BIGINT GENERATED BY DEFAULT AS IDENTITY,
+	  bitacora_fecha          TIMESTAMP    NOT NULL DEFAULT LOCALTIMESTAMP,
+	  bitacora_usuario        VARCHAR(100) NOT NULL,
+	  bitacora_tabla          VARCHAR(63)  NOT NULL,
+	  bitacora_operacion      VARCHAR(6)   NOT NULL,
+	  bitacora_ip             VARCHAR(45)  NULL,
+	  bitacora_sesion         BIGINT       NULL,
+	  bitacora_query          TEXT         NULL,
+	  bitacora_dato_anterior  JSONB        NULL,
+	  bitacora_dato_nuevo     JSONB        NULL,
+	  CONSTRAINT pk_bitacora PRIMARY KEY (bitacora_num, bitacora_fecha)
+	    USING INDEX TABLESPACE ts_bitacora,
+	  CONSTRAINT ck_bitacora_operacion
+	    CHECK (bitacora_operacion IN ('INSERT', 'UPDATE', 'DELETE'))
+	) PARTITION BY RANGE (bitacora_fecha);
+	
+	CREATE TABLE bitacora_2026 PARTITION OF bitacora
+	  FOR VALUES FROM (MINVALUE) TO ('2027-01-01') TABLESPACE ts_bitacora;
+	CREATE TABLE bitacora_2027 PARTITION OF bitacora
+	  FOR VALUES FROM ('2027-01-01') TO ('2028-01-01') TABLESPACE ts_bitacora;
+	CREATE TABLE bitacora_posterior PARTITION OF bitacora
+	  FOR VALUES FROM ('2028-01-01') TO (MAXVALUE) TABLESPACE ts_bitacora;
+	
+	-- 3. Copia de los datos y de la numeración de la bitácora
+	INSERT INTO pago SELECT * FROM pago_original;
+	INSERT INTO bitacora SELECT * FROM bitacora_original;
+	SELECT setval(pg_get_serial_sequence('bitacora', 'bitacora_num'),
+	              (SELECT MAX(bitacora_num) FROM bitacora));
+	
+	-- 4. Eliminación de las tablas originales
+	DROP TABLE pago_original;
+	DROP TABLE bitacora_original;
+	
+	-- 5. Bitácora: nombre de la tabla raíz y triggers de las nuevas tablas
+	CREATE OR REPLACE FUNCTION fn_bitacora()
+	RETURNS trigger
+	LANGUAGE plpgsql
+	SECURITY DEFINER
+	SET search_path = inversiones
+	AS $$
+	BEGIN
+	  INSERT INTO bitacora (bitacora_fecha, bitacora_usuario, bitacora_tabla,
+	                        bitacora_operacion, bitacora_ip, bitacora_sesion,
+	                        bitacora_query, bitacora_dato_anterior,
+	                        bitacora_dato_nuevo)
+	  VALUES (LOCALTIMESTAMP, session_user,
+	          COALESCE((SELECT relname FROM pg_class
+	                    WHERE oid = pg_partition_root(TG_RELID)),
+	                   TG_TABLE_NAME),
+	          TG_OP,
+	          host(inet_client_addr()), pg_backend_pid(), current_query(),
+	          CASE WHEN TG_OP IN ('UPDATE', 'DELETE') THEN to_jsonb(OLD) END,
+	          CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN to_jsonb(NEW) END);
+	  RETURN NULL;
+	END;
+	$$;
+	
+	CREATE TRIGGER trg_pago_bitacora
+	  AFTER INSERT OR UPDATE OR DELETE ON pago
+	  FOR EACH ROW EXECUTE FUNCTION fn_bitacora();
+	
+	CREATE TRIGGER trg_bitacora_proteger
+	  BEFORE UPDATE OR DELETE ON bitacora
+	  FOR EACH ROW EXECUTE FUNCTION fn_bitacora_proteger();
+	
+	CREATE TRIGGER trg_bitacora_truncate
+	  BEFORE TRUNCATE ON bitacora
+	  FOR EACH STATEMENT EXECUTE FUNCTION fn_bitacora_proteger();
+	
+	-- 6. Privilegios de las nuevas tablas. El auditor y el usuario de respaldo
+	--    reciben los de las tablas por los privilegios por defecto, pero no
+	--    el de la nueva secuencia de la bitácora, que necesita pg_dump.
+	GRANT SELECT ON pago TO rol_gerente, rol_ejecutivo;
+	GRANT SELECT, INSERT ON pago TO rol_tesoreria;
+	GRANT SELECT ON SEQUENCE bitacora_bitacora_num_seq TO rol_respaldo;
+	
+	COMMIT;
+	
+	ANALYZE pago;
+	ANALYZE bitacora;
+\end{verbatim}
+
+\paragraph{Verificación.} La primera consulta muestra las particiones de cada tabla, su rango y su tablespace; la segunda cuenta los registros de cada partición (figura~\ref{fig:pg-particiones}). Los registros suman 479 pagos y 17 registros de bitácora, los mismos que antes de la conversión.
+
+\begin{verbatim}
+	SELECT p.relname AS tabla, c.relname AS particion,
+	       pg_get_expr(c.relpartbound, c.oid) AS rango,
+	       t.spcname AS tablespace
+	FROM pg_inherits i
+	  JOIN pg_class p ON p.oid = i.inhparent
+	  JOIN pg_class c ON c.oid = i.inhrelid
+	  LEFT JOIN pg_tablespace t ON t.oid = c.reltablespace
+	WHERE p.relkind = 'p'
+	  AND p.relnamespace = 'inversiones'::regnamespace
+	ORDER BY p.relname, c.relname;
+	
+	SELECT 'pago_2024' AS particion, COUNT(*) AS registros FROM pago_2024
+	UNION ALL SELECT 'pago_2025', COUNT(*) FROM pago_2025
+	UNION ALL SELECT 'pago_2026', COUNT(*) FROM pago_2026
+	UNION ALL SELECT 'pago_posterior', COUNT(*) FROM pago_posterior
+	UNION ALL SELECT 'bitacora_2026', COUNT(*) FROM bitacora_2026
+	UNION ALL SELECT 'bitacora_2027', COUNT(*) FROM bitacora_2027
+	UNION ALL SELECT 'bitacora_posterior', COUNT(*) FROM bitacora_posterior;
+\end{verbatim}
+
+\captura{pg-particiones.png}{Particiones y registros por partición en PostgreSQL}{pg-particiones}
+
+La poda de particiones se comprueba con el plan de ejecución de una consulta que filtra los pagos de 2025 (figura~\ref{fig:pg-poda}). El plan recorre únicamente la partición \nem{pago\us 2025}.
+
+\begin{verbatim}
+	EXPLAIN
+	SELECT COUNT(*), SUM(pago_interes)
+	FROM pago
+	WHERE pago_fecha BETWEEN DATE '2025-01-01' AND DATE '2025-12-31';
+\end{verbatim}
+
+\captura{pg-poda.png}{Poda de particiones en PostgreSQL}{pg-poda}
+
+Por último, se comprueba que las reglas del esquema siguen vigentes (figura~\ref{fig:pg-integridad}). La tesorería intenta registrar el pago de un periodo de interés inexistente, que la llave foránea rechaza. Después, el DBA registra un pago válido dentro de una transacción que se revierte al final, y consulta el último registro de la bitácora, que debe indicar la tabla \nem{pago} y no el nombre de la partición. Ambos scripts son iguales en los dos gestores.
+
+\begin{verbatim}
+	-- Como xzaleta: pago de un periodo de interés inexistente
+	INSERT INTO pago (inversion_num, interes_fecha_inicial, pago_fecha,
+	                  pago_interes)
+	VALUES (16, '2030-01-01', '2026-10-30', 100.00);
+\end{verbatim}
+
+\begin{verbatim}
+	-- Como dlandero: pago válido dentro de una transacción que se revierte
+	START TRANSACTION;
+	INSERT INTO pago (inversion_num, interes_fecha_inicial, pago_fecha,
+	                  pago_interes)
+	VALUES (16, '2025-06-05', '2026-10-30', 4250.00);
+	SELECT bitacora_num, bitacora_tabla, bitacora_operacion
+	FROM bitacora
+	ORDER BY bitacora_num DESC
+	LIMIT 1;
+	ROLLBACK;
+\end{verbatim}
+
+\captura{pg-integridad.png}{Integridad y bitácora con las tablas particionadas en PostgreSQL}{pg-integridad}
+
+\section{MySQL}
+
+\paragraph{Conversión.} El DBA convierte las tablas con \nem{ALTER TABLE}. A diferencia de PostgreSQL, las sentencias de definición de datos de MySQL no pueden revertirse dentro de una transacción, pero cada \nem{ALTER TABLE} es atómico: si falla, la tabla queda como estaba. El script sigue estos pasos:
+
+\begin{enumerate}[leftmargin=*]
+	\item Elimina la llave foránea \nem{fk\us pago\us interes}, ya que InnoDB no admite llaves foráneas en tablas particionadas.
+	\item Particiona \nem{pago} y \nem{bitacora} por rango de su columna de fecha. La partición \nem{RANGE COLUMNS} compara directamente los valores de la columna, sin convertirlos en números. El gestor reconstruye cada tabla repartiendo sus filas entre las particiones; la reconstrucción no activa los triggers, por lo que no genera registros en la bitácora.
+	\item Sustituye la llave foránea por dos procedimientos y cuatro triggers, con el mismo esquema que las validaciones de la implementación física. Los triggers de \nem{pago} rechazan un pago cuyo periodo de interés no existe, y los de \nem{interes} rechazan eliminar un periodo con pagos o cambiar su llave, que es el comportamiento de \nem{ON DELETE RESTRICT} y \nem{ON UPDATE RESTRICT}.
+\end{enumerate}
+
+A diferencia de una llave foránea, los triggers no bloquean el registro referenciado mientras se completa la operación, por lo que no protegen contra dos operaciones simultáneas que se contradigan. En este sistema el riesgo no existe en la práctica, porque ningún rol de operación puede eliminar ni modificar periodos de interés.
+
+\begin{verbatim}
+	-- Ejecutado por dlandero en la segunda instancia, base de datos inversiones
+	
+	-- 1. Las tablas particionadas no admiten llaves foráneas
+	ALTER TABLE pago DROP FOREIGN KEY fk_pago_interes;
+	
+	-- 2. Particionamiento de las tablas existentes
+	ALTER TABLE pago
+	  PARTITION BY RANGE COLUMNS (pago_fecha) (
+	    PARTITION pago_2024      VALUES LESS THAN ('2025-01-01'),
+	    PARTITION pago_2025      VALUES LESS THAN ('2026-01-01'),
+	    PARTITION pago_2026      VALUES LESS THAN ('2027-01-01'),
+	    PARTITION pago_posterior VALUES LESS THAN (MAXVALUE)
+	  );
+	
+	ALTER TABLE bitacora
+	  PARTITION BY RANGE COLUMNS (bitacora_fecha) (
+	    PARTITION bitacora_2026      VALUES LESS THAN ('2027-01-01'),
+	    PARTITION bitacora_2027      VALUES LESS THAN ('2028-01-01'),
+	    PARTITION bitacora_posterior VALUES LESS THAN (MAXVALUE)
+	  );
+	
+	-- 3. La regla de la llave foránea, mediante triggers
+	DELIMITER //
+	
+	CREATE DEFINER = CURRENT_USER PROCEDURE validar_pago_interes(
+	  IN p_inversion_num INT, IN p_interes_fecha_inicial DATE)
+	READS SQL DATA
+	BEGIN
+	  IF NOT EXISTS (SELECT 1 FROM interes
+	                 WHERE inversion_num = p_inversion_num
+	                   AND interes_fecha_inicial = p_interes_fecha_inicial) THEN
+	    SIGNAL SQLSTATE '45000'
+	      SET MESSAGE_TEXT = 'El periodo de interés del pago no existe';
+	  END IF;
+	END //
+	
+	CREATE DEFINER = CURRENT_USER PROCEDURE validar_interes_sin_pagos(
+	  IN p_inversion_num INT, IN p_interes_fecha_inicial DATE)
+	READS SQL DATA
+	BEGIN
+	  IF EXISTS (SELECT 1 FROM pago
+	             WHERE inversion_num = p_inversion_num
+	               AND interes_fecha_inicial = p_interes_fecha_inicial) THEN
+	    SIGNAL SQLSTATE '45000'
+	      SET MESSAGE_TEXT = 'El periodo de interés tiene pagos registrados';
+	  END IF;
+	END //
+	
+	CREATE DEFINER = CURRENT_USER TRIGGER trg_pago_interes_ins
+	  BEFORE INSERT ON pago FOR EACH ROW
+	BEGIN
+	  CALL validar_pago_interes(NEW.inversion_num, NEW.interes_fecha_inicial);
+	END //
+	
+	CREATE DEFINER = CURRENT_USER TRIGGER trg_pago_interes_upd
+	  BEFORE UPDATE ON pago FOR EACH ROW
+	BEGIN
+	  CALL validar_pago_interes(NEW.inversion_num, NEW.interes_fecha_inicial);
+	END //
+	
+	CREATE DEFINER = CURRENT_USER TRIGGER trg_interes_pago_del
+	  BEFORE DELETE ON interes FOR EACH ROW
+	BEGIN
+	  CALL validar_interes_sin_pagos(OLD.inversion_num, OLD.interes_fecha_inicial);
+	END //
+	
+	CREATE DEFINER = CURRENT_USER TRIGGER trg_interes_pago_upd
+	  BEFORE UPDATE ON interes FOR EACH ROW
+	BEGIN
+	  IF NEW.inversion_num <> OLD.inversion_num
+	     OR NEW.interes_fecha_inicial <> OLD.interes_fecha_inicial THEN
+	    CALL validar_interes_sin_pagos(OLD.inversion_num,
+	                                   OLD.interes_fecha_inicial);
+	  END IF;
+	END //
+	
+	DELIMITER ;
+\end{verbatim}
+
+\paragraph{Verificación.} La primera consulta muestra las particiones de cada tabla desde el diccionario de datos; la segunda cuenta los registros de cada partición, que se seleccionan con la cláusula \nem{PARTITION} (figura~\ref{fig:mysql-particiones}). Los resultados coinciden con los de PostgreSQL.
+
+\begin{verbatim}
+	SELECT TABLE_NAME AS tabla, PARTITION_NAME AS particion,
+	       PARTITION_METHOD AS metodo, PARTITION_EXPRESSION AS columna,
+	       PARTITION_DESCRIPTION AS menor_que
+	FROM information_schema.PARTITIONS
+	WHERE TABLE_SCHEMA = 'inversiones'
+	  AND PARTITION_NAME IS NOT NULL
+	ORDER BY TABLE_NAME, PARTITION_ORDINAL_POSITION;
+	
+	SELECT 'pago_2024' AS particion, COUNT(*) AS registros
+	FROM pago PARTITION (pago_2024)
+	UNION ALL SELECT 'pago_2025', COUNT(*) FROM pago PARTITION (pago_2025)
+	UNION ALL SELECT 'pago_2026', COUNT(*) FROM pago PARTITION (pago_2026)
+	UNION ALL SELECT 'pago_posterior', COUNT(*) FROM pago PARTITION (pago_posterior)
+	UNION ALL SELECT 'bitacora_2026', COUNT(*) FROM bitacora PARTITION (bitacora_2026)
+	UNION ALL SELECT 'bitacora_2027', COUNT(*) FROM bitacora PARTITION (bitacora_2027)
+	UNION ALL SELECT 'bitacora_posterior', COUNT(*)
+	          FROM bitacora PARTITION (bitacora_posterior);
+\end{verbatim}
+
+\captura{mysql-particiones.png}{Particiones y registros por partición en MySQL}{mysql-particiones}
+
+La poda se comprueba con la misma consulta que en PostgreSQL. En MySQL, la columna \nem{partitions} del plan muestra únicamente \nem{pago\us 2025} (figura~\ref{fig:mysql-poda}).
+
+\captura{mysql-poda.png}{Poda de particiones en MySQL}{mysql-poda}
+
+Los scripts de integridad también son los mismos (figura~\ref{fig:mysql-integridad}). En MySQL, el pago del periodo inexistente lo rechaza el trigger \nem{trg\us pago\us interes\us ins}, con el mensaje \nem{El periodo de interés del pago no existe}.
+
+\captura{mysql-integridad.png}{Integridad y bitácora con las tablas particionadas en MySQL}{mysql-integridad}

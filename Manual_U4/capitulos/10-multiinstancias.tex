@@ -1,0 +1,219 @@
+\chapter{Multi-instancias}
+\label{cap:multiinstancias}
+\recursoscapitulo{10-multiinstancias}
+
+Una instancia es un servidor de base de datos en ejecución: un proceso del gestor con su propio directorio de datos, su configuración y su puerto. Un mismo equipo puede ejecutar varias instancias del mismo gestor, siempre que cada una tenga su propio directorio de datos y escuche en un puerto distinto.
+
+El sistema utiliza dos instancias de cada gestor. La primera contiene el esquema descrito en los capítulos anteriores. La segunda se construye como una copia exacta de la primera, con el mismo esquema y los mismos datos, y después se le aplican el particionamiento y la segmentación descritos en los capítulos siguientes. Así, ambas instancias parten del mismo estado, y las diferencias entre ellas se deben únicamente a esas dos técnicas.
+
+\section{Arquitectura de las instancias}
+
+Las dos instancias de cada gestor utilizan los mismos programas, instalados una sola vez; lo que las distingue es su directorio de datos, su configuración, su puerto y el servicio de Windows que las ejecuta (tabla~\ref{tab:instancias}). La primera instancia de cada gestor es la que creó el instalador, con las rutas descritas en la configuración del entorno. La segunda se crea manualmente, con sus archivos bajo \nem{C:\bs instancias}.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Instancias del sistema}
+	\label{tab:instancias}
+	\begin{tabular}{@{}L{2.7cm} L{3.1cm} L{3.1cm} L{3.1cm} L{3.1cm}@{}}
+		\toprule
+		& \textbf{PostgreSQL 1} & \textbf{PostgreSQL 2} & \textbf{MySQL 1} & \textbf{MySQL 2} \\
+		\midrule
+		Puerto & 5432 & 5434 & 3306 & 3308 \\
+		Puerto del protocolo X & --- & --- & 33060 & 33070 \\
+		Directorio de datos & El del instalador & \nem{C:\bs instancias\bs pg2\bs data} & El del instalador & \nem{C:\bs instancias\bs mysql2\bs data} \\
+		Configuración & \nem{postgresql.conf} del directorio de datos & \nem{postgresql.conf} del directorio de datos & \nem{my.ini} del instalador & \nem{C:\bs instancias\bs mysql2\bs my.ini} \\
+		Tablespaces & \nem{C:\bs tablespaces\bs pg1} & \nem{C:\bs tablespaces\bs pg2} & \nem{C:\bs tablespaces\bs mysql1} & \nem{C:\bs tablespaces\bs mysql2} \\
+		Servicio & \nem{postgresql-\allowbreak x64-17} & \nem{postgresql-\allowbreak x64-17-2} & \nem{MySQL80} & \nem{MySQL80-2} \\
+		Esquema & Base & Particionado y segmentado & Base & Particionado y segmentado \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+\paragraph{Configuración idéntica.} Como se indicó en la configuración del entorno, la segunda instancia de cada gestor utiliza los mismos parámetros que la primera, excepto los que identifican a la instancia y no pueden repetirse en un mismo equipo. Para garantizarlo, su archivo de configuración no se escribe de nuevo: se copia el de la primera instancia y se modifican únicamente esos valores. Los archivos de registro de cada instancia quedan separados sin cambios adicionales, porque sus rutas son relativas al directorio de datos.
+
+\paragraph{Conexión.} Los clientes eligen la instancia por su puerto: \nem{psql -p 5434} o \nem{mysql -P 3308}. Las reglas de acceso son las mismas en ambas instancias, porque \nem{pg\us hba.conf} se copia de la primera instancia y las cuentas de MySQL se crean con los mismos scripts. Para conectarse desde otro equipo, el firewall de Windows debe permitir también los puertos 5434 y 3308.
+
+\paragraph{Responsabilidades.} De acuerdo con la sección~\ref{sec:admin-instancia}, el superusuario crea y configura las instancias, y el DBA construye el esquema y traslada los datos.
+
+\section{Segunda instancia de PostgreSQL}
+
+\paragraph{Directorio.} El superusuario del equipo crea el directorio de la instancia y otorga control total a la cuenta del servicio, igual que en los directorios de los tablespaces. Los comandos de este capítulo se ejecutan en una terminal de Windows (\nem{cmd}) abierta como administrador; los que no caben en una línea se dividen con el carácter \nem{\textasciicircum}, que indica que el comando continúa en la línea siguiente. El directorio de datos se crea dentro de él en el paso siguiente y hereda el permiso.
+
+\begin{verbatim}
+	mkdir C:\instancias\pg2
+	icacls C:\instancias\pg2 /grant "NT AUTHORITY\NetworkService:(OI)(CI)F"
+\end{verbatim}
+
+\paragraph{Inicialización.} El programa \nem{initdb} crea el directorio de datos con su catálogo, las bases de datos iniciales y el superusuario \nem{postgres}, con la misma codificación y el mismo método de autenticación que la primera instancia. La opción \nem{-W} solicita la contraseña del superusuario.
+
+\begin{verbatim}
+	initdb -D C:\instancias\pg2\data -U postgres -E UTF8 -A scram-sha-256 -W
+\end{verbatim}
+
+\paragraph{Configuración.} El archivo \nem{postgresql.conf} que genera \nem{initdb} no coincide con el que deja el instalador: por ejemplo, \nem{listen\us addresses} se limita a \nem{localhost} y \nem{logging\us collector} está desactivado. Por ello, se reemplazan \nem{postgresql.conf} y \nem{pg\us hba.conf} por los de la primera instancia:
+
+\begin{verbatim}
+	copy /Y "C:\Program Files\PostgreSQL\17\data\postgresql.conf" ^
+	  C:\instancias\pg2\data
+	copy /Y "C:\Program Files\PostgreSQL\17\data\pg_hba.conf" ^
+	  C:\instancias\pg2\data
+\end{verbatim}
+
+En la copia de \nem{postgresql.conf} se cambia únicamente el puerto:
+
+\begin{verbatim}
+	port = 5434
+\end{verbatim}
+
+\paragraph{Servicio.} El programa \nem{pg\us ctl} registra la instancia como servicio de Windows, con inicio automático y la misma cuenta que el servicio de la primera instancia:
+
+\begin{verbatim}
+	pg_ctl register -N postgresql-x64-17-2 -D C:\instancias\pg2\data ^
+	  -U "NT AUTHORITY\NetworkService" -S auto
+	net start postgresql-x64-17-2
+\end{verbatim}
+
+\paragraph{Verificación.} El superusuario se conecta al puerto de la segunda instancia y consulta sus parámetros (figura~\ref{fig:pg-instancia2}). El puerto y el directorio de datos son propios de la instancia; los demás parámetros coinciden con los de la primera.
+
+\begin{verbatim}
+	SELECT name, setting
+	FROM pg_settings
+	WHERE name IN ('port', 'data_directory', 'listen_addresses',
+	               'logging_collector', 'log_statement', 'max_connections',
+	               'shared_buffers', 'TimeZone')
+	ORDER BY name;
+\end{verbatim}
+
+\captura{pg-instancia2.png}{Parámetros de la segunda instancia de PostgreSQL}{pg-instancia2}
+
+\section{Segunda instancia de MySQL}
+
+\paragraph{Directorio y configuración.} El superusuario del equipo crea el directorio de la instancia, le otorga permisos y copia en él el archivo \nem{my.ini} de la primera instancia:
+
+\begin{verbatim}
+	mkdir C:\instancias\mysql2
+	icacls C:\instancias\mysql2 /grant "NT AUTHORITY\NetworkService:(OI)(CI)F"
+	copy "C:\ProgramData\MySQL\MySQL Server 8.0\my.ini" C:\instancias\mysql2
+\end{verbatim}
+
+En la copia se modifican, dentro de la sección \nem{[mysqld]}, los valores de la tabla~\ref{tab:mysql2-parametros}. El directorio de datos no debe existir: lo crea la inicialización.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Parámetros propios de la segunda instancia de MySQL}
+	\label{tab:mysql2-parametros}
+	\begin{tabular}{@{}L{3.4cm} L{5.2cm} L{7.2cm}@{}}
+		\toprule
+		\textbf{Parámetro} & \textbf{Valor} & \textbf{Motivo} \\
+		\midrule
+		\nem{port} & \nem{3308} & Cada instancia escucha en su propio puerto. \\
+		\nem{datadir} & \nem{"C:/instancias/\allowbreak mysql2/data"} & Dos instancias no pueden compartir el directorio de datos. \\
+		\nem{innodb\us directories} & \nem{"C:/tablespaces/\allowbreak mysql2"} & Los tablespaces de la instancia (capítulo~\ref{cap:tablespaces}). \\
+		\nem{mysqlx\us port} & \nem{33070} & El instalador activa el protocolo X en el puerto 33060; si ambas instancias lo usaran, la segunda no podría iniciar. \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+\paragraph{Inicialización.} El programa \nem{mysqld}, con la opción \nem{-{}-initialize}, crea el directorio de datos y la cuenta \nem{'root'@'localhost'} con una contraseña temporal. Sin embargo, el \nem{my.ini} copiado ya activa \nem{skip\us name\us resolve}, de modo que esa cuenta no podría conectarse desde el cliente de Windows (sección~\ref{sec:conexion-mysql}). Por ello, la inicialización ejecuta un archivo con la opción \nem{-{}-init-file}, que asigna la contraseña definitiva de \nem{root} y crea sus cuentas de loopback antes del primer inicio:
+
+\begin{verbatim}
+	-- C:\instancias\mysql2\inicial.sql
+	ALTER USER 'root'@'localhost' IDENTIFIED BY '********';
+	CREATE USER 'root'@'127.0.0.1' IDENTIFIED BY '********';
+	GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION;
+	CREATE USER 'root'@'::1' IDENTIFIED BY '********';
+	GRANT ALL PRIVILEGES ON *.* TO 'root'@'::1' WITH GRANT OPTION;
+\end{verbatim}
+
+\begin{verbatim}
+	mysqld --defaults-file="C:\instancias\mysql2\my.ini" --initialize ^
+	  --init-file="C:/instancias/mysql2/inicial.sql" --console
+	del C:\instancias\mysql2\inicial.sql
+\end{verbatim}
+
+La opción \nem{-{}-defaults-file} debe ser la primera de la línea de comandos. El archivo se elimina después de la inicialización, porque contiene la contraseña del superusuario en texto plano.
+
+\paragraph{Servicio.} El servicio se registra con el mismo programa, indicando su archivo de configuración. MySQL registra sus servicios con la cuenta del sistema local, por lo que se cambia a la misma cuenta que la primera instancia:
+
+\begin{verbatim}
+	mysqld --install MySQL80-2 --defaults-file="C:\instancias\mysql2\my.ini"
+	sc config MySQL80-2 obj= "NT AUTHORITY\NetworkService" password= ""
+	net start MySQL80-2
+\end{verbatim}
+
+\paragraph{Verificación.} El superusuario se conecta al puerto de la segunda instancia y consulta sus parámetros (figura~\ref{fig:mysql-instancia2}):
+
+\begin{verbatim}
+	SELECT @@port, @@datadir, @@innodb_directories, @@mysqlx_port,
+	       @@max_connections, @@skip_name_resolve, @@general_log;
+\end{verbatim}
+
+\captura{mysql-instancia2.png}{Parámetros de la segunda instancia de MySQL}{mysql-instancia2}
+
+\section{Carga del esquema y los datos}
+
+La segunda instancia se construye con el mismo procedimiento que la primera, hasta tener el mismo esquema y los mismos datos. El esquema se crea con los scripts de los capítulos anteriores; los datos no se cargan de nuevo, sino que se copian de la primera instancia. La tabla~\ref{tab:secuencia-instancia2} muestra la secuencia completa.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Construcción de la segunda instancia}
+	\label{tab:secuencia-instancia2}
+	\begin{tabular}{@{}r L{3.6cm} L{11.2cm}@{}}
+		\toprule
+		& \textbf{Ejecuta} & \textbf{Paso} \\
+		\midrule
+		1 & Superusuario & Rol del DBA y, en PostgreSQL, la base de datos (secciones~\ref{sec:roles-pg} y~\ref{sec:roles-mysql}, e implementación física). \\
+		2 & DBA & Base de datos en MySQL, roles de puesto y usuarios. En MySQL, el superusuario otorga además los privilegios sobre la instancia. \\
+		3 & DBA & Esquema, tablas, procedimientos, triggers de validación y permisos (implementación física). \\
+		4 & DBA & Copia de los datos de la primera instancia. \\
+		5 & DBA & Triggers de bitácora (capítulo~\ref{cap:bitacora}). \\
+		6 & Superusuario y DBA & Tablespaces, sin trasladar \nem{pago} ni \nem{bitacora} (capítulo~\ref{cap:tablespaces}). \\
+		7 & DBA & Verificación de que ambas instancias contienen los mismos datos. \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+A partir de ese punto, la segunda instancia recibe el particionamiento y la segmentación de los capítulos siguientes, que no se aplican a la primera.
+
+\paragraph{Por qué se copian los datos.} Volver a ejecutar la carga de datos de prueba no reproduciría el estado de la primera instancia, que también contiene los registros creados durante las pruebas de alcance: el cliente 26, la inversión 41 con sus periodos de interés, el pago de la inversión 16 y los 17 registros de bitácora que dejaron esas operaciones. La copia se toma después de las pruebas, por lo que la segunda instancia recibe exactamente los mismos registros, con las mismas llaves. Esto es posible gracias a que las columnas de identidad y \nem{AUTO\us INCREMENT} admiten valores explícitos (tabla~\ref{tab:equivalencia-tipos}). Después de la copia, cada gestor continúa la numeración a partir del valor más alto copiado.
+
+\paragraph{Por qué la bitácora se activa después.} Los triggers de bitácora se crean después de la copia, igual que en la primera instancia se crearon después de la carga inicial. Si existieran durante la copia, cada registro copiado generaría un registro de auditoría, como si un usuario lo hubiera insertado. Los triggers de validación, en cambio, sí existen durante la copia y vuelven a validar los datos sin afectarlos.
+
+\paragraph{PostgreSQL.} El DBA genera un respaldo de solo datos de la primera instancia con \nem{pg\us dump} y lo restaura en la segunda con \nem{pg\us restore}. El respaldo incluye el valor de las secuencias de las columnas de identidad, y \nem{pg\us restore} carga las tablas en el orden que exigen sus llaves foráneas.
+
+\begin{verbatim}
+	pg_dump -h localhost -p 5432 -U dlandero -d inversiones -n inversiones ^
+	  --data-only -F c -f inversiones_datos.dump
+	pg_restore -h localhost -p 5434 -U dlandero -d inversiones ^
+	  --data-only --exit-on-error inversiones_datos.dump
+\end{verbatim}
+
+\paragraph{MySQL.} El DBA genera el respaldo con \nem{mysqldump} y lo ejecuta en la segunda instancia con el cliente \nem{mysql}:
+
+\begin{verbatim}
+	mysqldump -h localhost -P 3306 -u dlandero -p --no-create-info --skip-triggers ^
+	  --no-tablespaces --single-transaction inversiones > inversiones_datos.sql
+	mysql -h localhost -P 3308 -u dlandero -p inversiones < inversiones_datos.sql
+\end{verbatim}
+
+\nem{-{}-no-create-info} y \nem{-{}-skip-triggers} limitan el respaldo a los datos, ya que las tablas y los triggers existen en la segunda instancia; \nem{-{}-no-tablespaces} omite la información de los tablespaces, que requeriría el privilegio \nem{PROCESS}; y \nem{-{}-single-transaction} toma una copia consistente sin bloquear las tablas. \nem{mysqldump} escribe las tablas en orden alfabético, por ejemplo \nem{interes} antes que \nem{inversion}, por lo que el respaldo desactiva la verificación de llaves foráneas durante la carga (\nem{FOREIGN\us KEY\us CHECKS = 0}) y la restablece al final.
+
+\paragraph{Verificación.} La siguiente consulta, igual en ambos gestores, se ejecuta en las dos instancias; ambas deben devolver los mismos valores (figuras~\ref{fig:pg-instancias-datos} y~\ref{fig:mysql-instancias-datos}).
+
+\begin{verbatim}
+	SELECT (SELECT COUNT(*) FROM cliente) AS clientes,
+	       (SELECT COUNT(*) FROM inversion) AS inversiones,
+	       (SELECT COUNT(*) FROM interes) AS periodos,
+	       (SELECT COUNT(*) FROM pago) AS pagos,
+	       (SELECT COUNT(*) FROM liquidacion) AS liquidaciones,
+	       (SELECT COUNT(*) FROM bitacora) AS bitacora,
+	       (SELECT SUM(pago_interes) + SUM(pago_mora) FROM pago) AS total_pagado;
+\end{verbatim}
+
+Ambas instancias contienen 26 clientes, 41 inversiones, 651 periodos de interés, 479 pagos, 15 liquidaciones y 17 registros de bitácora, con el mismo total pagado.
+
+\captura{pg-instancias-datos.png}{Datos de las dos instancias de PostgreSQL}{pg-instancias-datos}
+\captura{mysql-instancias-datos.png}{Datos de las dos instancias de MySQL}{mysql-instancias-datos}

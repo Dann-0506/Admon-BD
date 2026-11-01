@@ -1,0 +1,278 @@
+\chapter{Tablespaces}
+\label{cap:tablespaces}
+\recursoscapitulo{09-tablespaces}
+
+Un tablespace es una ubicación en disco donde el gestor guarda los datos de los objetos que se le asignan. En PostgreSQL, un tablespace es un directorio; en MySQL, un tablespace general es un archivo \nem{.ibd} que comparten varias tablas. Si no se indica otra cosa, PostgreSQL guarda todos los objetos en el tablespace \nem{pg\us default}, dentro del directorio de datos, y MySQL guarda cada tabla en su propio archivo, también dentro del directorio de datos.
+
+\section{Distribuci\'on de las tablas}
+
+\paragraph{Criterio.} Las tablas se agrupan en tres tablespaces según su uso y su ritmo de crecimiento (tabla~\ref{tab:distribucion-tablespaces}). La distribución es la misma en ambos gestores.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Distribución de las tablas en los tablespaces}
+	\label{tab:distribucion-tablespaces}
+	\begin{tabular}{@{}L{2.6cm} L{5cm} L{8.2cm}@{}}
+		\toprule
+		\textbf{Tablespace} & \textbf{Tablas} & \textbf{Criterio} \\
+		\midrule
+		\nem{ts\us catalogos} & \nem{empresa}, \nem{sucursal}, \nem{cliente}, \nem{aval} & Datos maestros: pocos registros que cambian ocasionalmente. \\
+		\nem{ts\us operacion} & \nem{inversion}, \nem{interes}, \nem{pago}, \nem{liquidacion} & Datos de la operación: crecen con cada inversión y con cada mes de pagos. \\
+		\nem{ts\us bitacora} & \nem{bitacora} & Registro de auditoría: crece con cada cambio en los datos y sus registros nunca se modifican ni se eliminan. \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+\paragraph{Justificación.} Los tres tablespaces se ubican en el mismo disco que el directorio de datos, por lo que separarlos no mejora el rendimiento: todas las lecturas y escrituras compiten por el mismo dispositivo. El beneficio es administrativo:
+
+\begin{itemize}[leftmargin=*]
+	\item El tamaño de cada tablespace indica cuánto crece cada grupo de tablas. En particular, permite vigilar la bitácora, que es la tabla que crece de forma continua.
+	\item Los archivos de cada grupo se encuentran en un directorio conocido, fuera del directorio de datos.
+	\item Si en el futuro el equipo cuenta con otro disco, un grupo de tablas puede trasladarse a él cambiando solo la ubicación de su tablespace, sin modificar el esquema ni las consultas.
+\end{itemize}
+
+\paragraph{Índices.} Cada índice se ubica en el mismo tablespace que su tabla. En MySQL no existe otra opción, ya que InnoDB guarda los índices de una tabla en el mismo tablespace que sus datos. PostgreSQL sí permite separarlos, pero se mantienen junto a su tabla para que la distribución sea igual en ambos gestores.
+
+\paragraph{Responsabilidades.} De acuerdo con la sección~\ref{sec:admin-instancia}, el superusuario prepara los directorios y crea los tablespaces, porque ambos gestores reservan esa operación a cuentas con privilegios sobre toda la instancia. El DBA asigna las tablas a los tablespaces. En PostgreSQL, para poder hacerlo, el DBA debe ser dueño de los tablespaces; en MySQL, los tablespaces no tienen dueño y basta con los privilegios del DBA sobre la base de datos.
+
+\paragraph{Momento de la asignación.} Las tablas se crean como se describe en la implementación física, en la ubicación por defecto, y después el DBA las traslada a su tablespace. Así, los scripts de creación son los mismos con o sin tablespaces, y en ambas instancias. El traslado copia los datos de la tabla y la bloquea mientras dura la copia; con el volumen de este sistema es inmediato, pero en una base de datos en operación con tablas grandes conviene crear las tablas directamente en su tablespace.
+
+\paragraph{Segunda instancia.} La segunda instancia de cada gestor tiene sus tablespaces en un directorio propio. Ahí, las tablas \nem{pago} y \nem{bitacora} están particionadas, lo que produce la única diferencia entre gestores (tabla~\ref{tab:tablespaces-instancias}):
+
+\begin{itemize}[leftmargin=*]
+	\item En PostgreSQL, cada partición puede ubicarse en un tablespace, por lo que las particiones de \nem{pago} se ubican en \nem{ts\us operacion} y las de \nem{bitacora} en \nem{ts\us bitacora}. Su creación se describe en el capítulo de particionamiento.
+	\item En MySQL, una tabla particionada no puede ubicarse en un tablespace general: el gestor rechaza la operación con el error 1478 (\nem{A partitioned table is not allowed in a shared tablespace}). La única alternativa es indicar un directorio para cada partición con la opción \nem{DATA DIRECTORY}, que requiere el privilegio global \nem{FILE}. Ese privilegio permite leer y escribir cualquier archivo al que tenga acceso el servidor, por lo que no se otorga al DBA; y que el superusuario creara las tablas contradiría la división de responsabilidades. Por ello, en la segunda instancia de MySQL, \nem{pago} y \nem{bitacora} permanecen en archivos individuales dentro del directorio de datos, y el tablespace \nem{ts\us bitacora} no se crea, ya que no contendría ninguna tabla.
+\end{itemize}
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Ubicación de las tablas en cada instancia}
+	\label{tab:tablespaces-instancias}
+	\begin{tabular}{@{}L{3.6cm} L{3.4cm} L{3.4cm} L{4.6cm}@{}}
+		\toprule
+		\textbf{Tablas} & \textbf{Primera instancia (ambos gestores)} & \textbf{Segunda instancia de PostgreSQL} & \textbf{Segunda instancia de MySQL} \\
+		\midrule
+		\nem{empresa}, \nem{sucursal}, \nem{cliente}, \nem{aval} & \nem{ts\us catalogos} & \nem{ts\us catalogos} & \nem{ts\us catalogos} \\
+		\nem{inversion}, \nem{interes}, \nem{liquidacion} & \nem{ts\us operacion} & \nem{ts\us operacion} & \nem{ts\us operacion} \\
+		\nem{pago} & \nem{ts\us operacion} & \nem{ts\us operacion} (cada partición) & Un archivo por partición en el directorio de datos \\
+		\nem{bitacora} & \nem{ts\us bitacora} & \nem{ts\us bitacora} (cada partición) & Un archivo por partición en el directorio de datos \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+\paragraph{Directorios.} Todos los tablespaces se ubican bajo \nem{C:\bs tablespaces}, con una carpeta por instancia y, dentro de ella, una subcarpeta por tablespace (tabla~\ref{tab:directorios-tablespaces}).
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Directorios de los tablespaces}
+	\label{tab:directorios-tablespaces}
+	\begin{tabular}{@{}L{4.6cm} L{11.2cm}@{}}
+		\toprule
+		\textbf{Instancia} & \textbf{Directorios} \\
+		\midrule
+		Primera de PostgreSQL & \nem{C:\bs tablespaces\bs pg1\bs catalogos}, \nem{\bs operacion}, \nem{\bs bitacora} \\
+		Segunda de PostgreSQL & \nem{C:\bs tablespaces\bs pg2\bs catalogos}, \nem{\bs operacion}, \nem{\bs bitacora} \\
+		Primera de MySQL & \nem{C:\bs tablespaces\bs mysql1\bs catalogos}, \nem{\bs operacion}, \nem{\bs bitacora} \\
+		Segunda de MySQL & \nem{C:\bs tablespaces\bs mysql2\bs catalogos}, \nem{\bs operacion} \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+Las secciones siguientes muestran los scripts de la primera instancia. En la segunda instancia son los mismos, cambiando \nem{pg1} por \nem{pg2} o \nem{mysql1} por \nem{mysql2}, y omitiendo \nem{pago} y \nem{bitacora}, que se ubican al particionarlas; en MySQL se omite también la creación de \nem{ts\us bitacora}.
+
+\section{PostgreSQL}
+
+\subsection{Directorios}
+
+Cada tablespace de PostgreSQL es un directorio que debe existir y estar vacío al crearlo. El servicio del gestor se ejecuta con su propia cuenta de Windows, \nem{NT AUTHORITY\bs NetworkService} con el instalador por defecto, y no con la del usuario que administra el equipo, por lo que esa cuenta debe tener control total sobre los directorios. La cuenta del servicio se verifica en la columna \textit{Iniciar sesión como} de la consola de servicios (\nem{services.msc}).
+
+Los directorios se crean desde una terminal ejecutada como administrador:
+
+\begin{verbatim}
+	mkdir C:\tablespaces\pg1\catalogos
+	mkdir C:\tablespaces\pg1\operacion
+	mkdir C:\tablespaces\pg1\bitacora
+	icacls C:\tablespaces\pg1 /grant "NT AUTHORITY\NetworkService:(OI)(CI)F"
+\end{verbatim}
+
+Los indicadores \nem{(OI)(CI)} hacen que el permiso se herede a las subcarpetas y a los archivos que el gestor cree en ellas, y \nem{F} otorga control total.
+
+\subsection{Creaci\'on de los tablespaces}
+
+El superusuario crea los tablespaces y asigna como dueño al rol del DBA. Sin ese dueño, el DBA no podría trasladar tablas a ellos: el gestor rechaza la operación con el error \nem{permission denied for tablespace}. Las rutas se escriben con diagonales normales, que PostgreSQL acepta en Windows.
+
+\begin{verbatim}
+	-- Ejecutado por postgres
+	CREATE TABLESPACE ts_catalogos OWNER rol_admin_bd
+	  LOCATION 'C:/tablespaces/pg1/catalogos';
+	CREATE TABLESPACE ts_operacion OWNER rol_admin_bd
+	  LOCATION 'C:/tablespaces/pg1/operacion';
+	CREATE TABLESPACE ts_bitacora OWNER rol_admin_bd
+	  LOCATION 'C:/tablespaces/pg1/bitacora';
+\end{verbatim}
+
+Dentro de cada directorio, el gestor crea una subcarpeta propia de su versión (\nem{PG\us 17\us }\ldots) y, dentro de ella, una carpeta por base de datos, con un archivo por cada tabla e índice, nombrado con su identificador interno.
+
+\subsection{Asignaci\'on de las tablas}
+
+El DBA traslada cada tabla con \nem{ALTER TABLE \ldots{} SET TABLESPACE}. Esta sentencia traslada la tabla y su almacenamiento auxiliar (TOAST), donde PostgreSQL guarda los valores grandes, como los textos y JSON de la bitácora; pero \textbf{no traslada sus índices}, que deben moverse por separado con \nem{ALTER INDEX}. Los índices del esquema son los que crean las llaves primarias y alternas.
+
+\begin{verbatim}
+	-- Ejecutado por dlandero en la base de datos inversiones
+	SET ROLE rol_admin_bd;
+
+	-- Catálogos
+	ALTER TABLE empresa  SET TABLESPACE ts_catalogos;
+	ALTER TABLE sucursal SET TABLESPACE ts_catalogos;
+	ALTER TABLE cliente  SET TABLESPACE ts_catalogos;
+	ALTER TABLE aval     SET TABLESPACE ts_catalogos;
+	ALTER INDEX pk_empresa     SET TABLESPACE ts_catalogos;
+	ALTER INDEX pk_sucursal    SET TABLESPACE ts_catalogos;
+	ALTER INDEX pk_cliente     SET TABLESPACE ts_catalogos;
+	ALTER INDEX ak_cliente_rfc SET TABLESPACE ts_catalogos;
+	ALTER INDEX pk_aval        SET TABLESPACE ts_catalogos;
+	ALTER INDEX ak_aval_rfc    SET TABLESPACE ts_catalogos;
+
+	-- Operación
+	ALTER TABLE inversion   SET TABLESPACE ts_operacion;
+	ALTER TABLE interes     SET TABLESPACE ts_operacion;
+	ALTER TABLE pago        SET TABLESPACE ts_operacion;
+	ALTER TABLE liquidacion SET TABLESPACE ts_operacion;
+	ALTER INDEX pk_inversion        SET TABLESPACE ts_operacion;
+	ALTER INDEX ak_inversion_pagare SET TABLESPACE ts_operacion;
+	ALTER INDEX pk_interes          SET TABLESPACE ts_operacion;
+	ALTER INDEX pk_pago             SET TABLESPACE ts_operacion;
+	ALTER INDEX pk_liquidacion      SET TABLESPACE ts_operacion;
+
+	-- Bitácora
+	ALTER TABLE bitacora    SET TABLESPACE ts_bitacora;
+	ALTER INDEX pk_bitacora SET TABLESPACE ts_bitacora;
+\end{verbatim}
+
+\paragraph{Verificación.} La primera consulta muestra los tablespaces del sistema, su dueño, su ubicación y su tamaño (figura~\ref{fig:pg-tablespaces}):
+
+\begin{verbatim}
+	SELECT spcname AS tablespace,
+	       pg_get_userbyid(spcowner) AS dueno,
+	       pg_tablespace_location(oid) AS ubicacion,
+	       pg_size_pretty(pg_tablespace_size(oid)) AS tamano
+	FROM pg_tablespace
+	WHERE spcname LIKE 'ts\_%'
+	ORDER BY spcname;
+\end{verbatim}
+
+\captura{pg-tablespaces.png}{Tablespaces de PostgreSQL}{pg-tablespaces}
+
+La segunda muestra el tablespace de cada tabla e índice del esquema (figura~\ref{fig:pg-tablespaces-objetos}). Los objetos que permanecen en la ubicación por defecto aparecerían como \nem{pg\us default}, por lo que la consulta confirma que no quedó ninguno sin trasladar.
+
+\begin{verbatim}
+	SELECT COALESCE(t.spcname, 'pg_default') AS tablespace,
+	       CASE c.relkind WHEN 'r' THEN 'tabla' ELSE 'indice' END AS tipo,
+	       c.relname AS objeto,
+	       pg_size_pretty(pg_table_size(c.oid)) AS tamano
+	FROM pg_class c
+	  LEFT JOIN pg_tablespace t ON t.oid = c.reltablespace
+	WHERE c.relnamespace = 'inversiones'::regnamespace
+	  AND c.relkind IN ('r', 'i')
+	ORDER BY 1, c.relkind DESC, c.relname;
+\end{verbatim}
+
+\captura{pg-tablespaces-objetos.png}{Tablas e índices por tablespace en PostgreSQL}{pg-tablespaces-objetos}
+
+Por último, el contenido de los directorios muestra los archivos que el gestor creó en cada tablespace (figura~\ref{fig:pg-tablespaces-archivos}):
+
+\begin{verbatim}
+	dir /s C:\tablespaces\pg1
+\end{verbatim}
+
+\captura{pg-tablespaces-archivos.png}{Archivos de los tablespaces de PostgreSQL}{pg-tablespaces-archivos}
+
+\section{MySQL}
+
+\subsection{Directorios}
+
+MySQL solo crea tablespaces fuera del directorio de datos en las rutas que se declaran en el parámetro \nem{innodb\us directories}; en cualquier otra, rechaza la operación con el error 3121 (\nem{The DATAFILE location must be in a known directory}). El parámetro acepta también las subcarpetas de la ruta declarada, por lo que basta con indicar la carpeta de la instancia. Se agrega en \nem{my.ini}, dentro de la sección \nem{[mysqld]}, y requiere reiniciar el servicio:
+
+\begin{verbatim}
+	innodb_directories="C:/tablespaces/mysql1"
+\end{verbatim}
+
+Las rutas de MySQL se escriben con diagonales normales, porque en sus cadenas de texto la diagonal invertida es un carácter de escape. Los directorios se crean y se les otorgan permisos igual que en PostgreSQL, para la cuenta con la que se ejecuta el servicio de MySQL, que también se verifica en \nem{services.msc}:
+
+\begin{verbatim}
+	mkdir C:\tablespaces\mysql1\catalogos
+	mkdir C:\tablespaces\mysql1\operacion
+	mkdir C:\tablespaces\mysql1\bitacora
+	icacls C:\tablespaces\mysql1 /grant "NT AUTHORITY\NetworkService:(OI)(CI)F"
+\end{verbatim}
+
+\subsection{Creaci\'on de los tablespaces}
+
+El superusuario crea los tablespaces, ya que la operación requiere el privilegio global \nem{CREATE TABLESPACE}. Cada tablespace es un archivo \nem{.ibd} dentro de su directorio.
+
+\begin{verbatim}
+	-- Ejecutado por root
+	CREATE TABLESPACE ts_catalogos
+	  ADD DATAFILE 'C:/tablespaces/mysql1/catalogos/ts_catalogos.ibd';
+	CREATE TABLESPACE ts_operacion
+	  ADD DATAFILE 'C:/tablespaces/mysql1/operacion/ts_operacion.ibd';
+	CREATE TABLESPACE ts_bitacora
+	  ADD DATAFILE 'C:/tablespaces/mysql1/bitacora/ts_bitacora.ibd';
+\end{verbatim}
+
+\subsection{Asignaci\'on de las tablas}
+
+El DBA traslada cada tabla con \nem{ALTER TABLE \ldots{} TABLESPACE}. Los índices se trasladan junto con la tabla, y la operación no requiere privilegios sobre el tablespace, ya que en MySQL estos no tienen dueño.
+
+\begin{verbatim}
+	-- Ejecutado por dlandero en la base de datos inversiones
+	-- Catálogos
+	ALTER TABLE empresa  TABLESPACE ts_catalogos;
+	ALTER TABLE sucursal TABLESPACE ts_catalogos;
+	ALTER TABLE cliente  TABLESPACE ts_catalogos;
+	ALTER TABLE aval     TABLESPACE ts_catalogos;
+
+	-- Operación
+	ALTER TABLE inversion   TABLESPACE ts_operacion;
+	ALTER TABLE interes     TABLESPACE ts_operacion;
+	ALTER TABLE pago        TABLESPACE ts_operacion;
+	ALTER TABLE liquidacion TABLESPACE ts_operacion;
+
+	-- Bitácora
+	ALTER TABLE bitacora TABLESPACE ts_bitacora;
+\end{verbatim}
+
+\paragraph{Verificación.} Las tablas de \nem{information\us schema} que describen los tablespaces de InnoDB requieren el privilegio \nem{PROCESS}, que el DBA no tiene, por lo que las consultas las ejecuta el superusuario. La primera muestra los tablespaces, su archivo y su tamaño (figura~\ref{fig:mysql-tablespaces}):
+
+\begin{verbatim}
+	SELECT s.NAME AS tablespace, d.PATH AS archivo,
+	       ROUND(s.FILE_SIZE / 1024) AS tamano_kb
+	FROM information_schema.INNODB_TABLESPACES s
+	  JOIN information_schema.INNODB_DATAFILES d ON d.SPACE = s.SPACE
+	WHERE s.NAME LIKE 'ts\_%'
+	ORDER BY s.NAME;
+\end{verbatim}
+
+\captura{mysql-tablespaces.png}{Tablespaces de MySQL}{mysql-tablespaces}
+
+La segunda muestra el tablespace de cada tabla del esquema (figura~\ref{fig:mysql-tablespaces-objetos}). Una tabla que permaneciera en su archivo individual aparecería con un tablespace de nombre \nem{inversiones/}\textit{tabla}.
+
+\begin{verbatim}
+	SELECT s.NAME AS tablespace,
+	       SUBSTRING_INDEX(t.NAME, '/', -1) AS tabla
+	FROM information_schema.INNODB_TABLES t
+	  JOIN information_schema.INNODB_TABLESPACES s ON s.SPACE = t.SPACE
+	WHERE t.NAME LIKE 'inversiones/%'
+	ORDER BY s.NAME, tabla;
+\end{verbatim}
+
+\captura{mysql-tablespaces-objetos.png}{Tablas por tablespace en MySQL}{mysql-tablespaces-objetos}
+
+\begin{verbatim}
+	dir /s C:\tablespaces\mysql1
+\end{verbatim}
+
+\captura{mysql-tablespaces-archivos.png}{Archivos de los tablespaces de MySQL}{mysql-tablespaces-archivos}

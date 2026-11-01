@@ -1,0 +1,71 @@
+\chapter{Modelo conceptual}
+\recursoscapitulo{03-conceptual}
+
+El modelo conceptual del sistema se compone de nueve entidades: \nem{EMPRESA}, \nem{SUCURSAL}, \nem{CLIENTE}, \nem{AVAL}, \nem{INVERSION}, \nem{INTERES}, \nem{PAGO}, \nem{LIQUIDACION} y \nem{BITACORA}.
+
+\captura{diagrama_conceptual.jpg}{Diagrama conceptual del sistema}{diagrama-conceptual}
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Entidades del modelo conceptual y sus llaves}
+	\label{tab:entidades}
+	\begin{tabular}{@{}l l@{}}
+		\toprule
+		\textbf{Entidad} & \textbf{Llave} \\
+		\midrule
+		\nem{EMPRESA}     & PK \nem{empresa\us rfc} \\
+		\nem{SUCURSAL}    & PK \nem{sucursal\us num} \\
+		\nem{CLIENTE}     & PK \nem{cliente\us num}; AK \nem{cliente\us rfc} \\
+		\nem{AVAL}        & PK \nem{aval\us num}; AK \nem{aval\us rfc} \\
+		\nem{INVERSION}   & PK \nem{inversion\us num}; AK \nem{pagare\us num} \\
+		\nem{INTERES}     & PK (\nem{inversion\us num}, \nem{interes\us fecha\us inicial}) \\
+		\nem{PAGO}        & PK (\nem{inversion\us num}, \nem{interes\us fecha\us inicial}, \nem{pago\us fecha}) \\
+		\nem{LIQUIDACION} & PK \nem{inversion\us num} \\
+		\nem{BITACORA}    & PK (\nem{bitacora\us num}, \nem{bitacora\us fecha}) \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+\clearpage
+
+Las relaciones entre las entidades son las siguientes:
+
+\begin{itemize}[leftmargin=*]
+	\item \nem{EMPRESA} $\rightarrow$ \nem{SUCURSAL}: cada sucursal pertenece a la empresa (\nem{empresa\us rfc}).
+	\item \nem{SUCURSAL} $\rightarrow$ \nem{INVERSION}: cada inversi\'on registra la sucursal donde se suscribi\'o el pagar\'e (\nem{sucursal\us num}).
+	\item \nem{CLIENTE} $\rightarrow$ \nem{INVERSION}: cada inversi\'on registra al cliente que invierte (\nem{cliente\us num}).
+	\item \nem{AVAL} $\rightarrow$ \nem{INVERSION}: cada inversi\'on registra, si existe, al aval que garantiza el pago (\nem{aval\us num}).
+	\item \nem{INVERSION} $\rightarrow$ \nem{INTERES}: cada periodo de inter\'es pertenece a una inversi\'on (\nem{inversion\us num}).
+	\item \nem{INTERES} $\rightarrow$ \nem{PAGO}: cada pago cubre un periodo de inter\'es (\nem{inversion\us num}, \nem{interes\us fecha\us inicial}).
+	\item \nem{INVERSION} $\rightarrow$ \nem{LIQUIDACION}: la liquidaci\'on registra la devoluci\'on del capital de una inversi\'on (\nem{inversion\us num}).
+	\item \nem{BITACORA} no se relaciona con las dem\'as entidades.
+\end{itemize}
+
+\paragraph{Reglas de negocio.} Las siguientes reglas provienen del pagaré de inversión y de la operación de la empresa, y se reflejan en el modelo:
+
+\begin{itemize}[leftmargin=*]
+	\item El n\'umero de pagar\'e es \'unico y sigue el formato consecutivo/año.
+	\item El lugar de suscripci\'on del pagar\'e es la ciudad de la sucursal donde se suscribe.
+	\item El aval, cuando existe, garantiza el pago de las obligaciones de la empresa y debe ser una persona distinta del cliente de la misma inversi\'on.
+	\item La fecha de vencimiento es posterior a la fecha de suscripci\'on del pagar\'e.
+	\item La fecha de vencimiento coincide con el día de pago, de modo que el último pago de intereses se realiza junto con la devolución del capital.
+	\item Las tasas ordinaria y moratoria se registran como tasas mensuales. Cuando el pagar\'e pacta una tasa anual, se registra dividida entre doce.
+	\item El inter\'es ordinario se paga mensualmente en un d\'ia fijo, entre el 1 y 28 de cada mes, a una tasa fija. Como el capital se devuelve en una sola exhibici\'on, el saldo insoluto sobre el que se calcula el inter\'es es siempre el capital invertido.
+	\item El inter\'es moratorio se aplica sobre los saldos vencidos y no pagados, tanto de inter\'es como de capital, a la tasa moratoria establecida en el pagar\'e.
+	\item El capital se devuelve en una sola exhibici\'on, por el monto total invertido, en la fecha de vencimiento o despu\'es de ella. Una devoluci\'on posterior al vencimiento genera inter\'es moratorio.
+	\item Una inversi\'on se encuentra en uno de tres estados: \textbf{vigente}, si no tiene liquidaci\'on registrada y su fecha de vencimiento no ha pasado; \textbf{vencida}, si no tiene liquidaci\'on registrada y su fecha de vencimiento ya pas\'o; y \textbf{liquidada}, si tiene liquidaci\'on registrada.
+	\item La moneda del pagar\'e es, por defecto, el peso mexicano (MXN).
+\end{itemize}
+
+\paragraph{Decisiones de diseño.} El modelo adopta las siguientes decisiones:
+
+\begin{itemize}[leftmargin=*]
+	\item \textbf{Interés programado separado del pago realizado.} \nem{INTERES} contiene lo que la empresa debe pagar en cada periodo y \nem{PAGO} lo que efectivamente pagó. La diferencia entre ambos permite obtener los estados de cuenta y determinar la mora.
+	\item \textbf{Liquidación como entidad propia.} La devolución del capital se registra en \nem{LIQUIDACION}, separada de los pagos de intereses, junto con el interés moratorio que genere su retraso.
+	\item \textbf{Empresa a través de la sucursal.} La inversión se relaciona con la sucursal y, por medio de ella, con la empresa, de modo que los datos de la empresa no se repiten en cada inversión.
+	\item \textbf{Tasa fija en la inversión.} Como el pagaré establece una tasa fija, las tasas ordinaria y moratoria se almacenan en \nem{INVERSION} en lugar de un catálogo de tasas independiente.
+	\item \textbf{Llaves sustitutas.} \nem{SUCURSAL}, \nem{CLIENTE}, \nem{AVAL} e \nem{INVERSION} usan una clave numérica como llave primaria; el RFC y el número de pagaré se conservan como llaves alternas. \nem{EMPRESA} usa su RFC como llave natural.
+	\item \textbf{Clave de partición en la llave primaria.} Las llaves primarias de \nem{PAGO} y \nem{BITACORA} incluyen su fecha, porque ambos gestores exigen que la columna de partición forme parte de la llave primaria en la instancia particionada.
+	\item \textbf{Bitácora independiente.} \nem{BITACORA} registra los cambios de todas las tablas sin relacionarse con ellas, de modo que sus registros se conservan aunque los datos originales se modifiquen o eliminen.
+\end{itemize}

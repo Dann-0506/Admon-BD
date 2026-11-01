@@ -1,0 +1,357 @@
+\chapter{Configuraci\'on del entorno}
+\label{cap:entorno}
+\recursoscapitulo{02-entorno}
+El sistema se implementa en PostgreSQL 17.7 y MySQL 8.0.39. Este cap\'itulo describe la configuraci\'on de las instancias de cada gestor, incluidos los par\'ametros de registro de actividad que sustentan la bit\'acora de instancia.
+
+Ambos gestores se instalan en un mismo equipo, cuyas caracter\'isticas se muestran en la tabla~\ref{tab:equipo-servidor}.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Caracter\'isticas del equipo servidor}
+	\label{tab:equipo-servidor}
+	\begin{tabular}{@{}L{4cm} L{11cm}@{}}
+		\toprule
+		\textbf{Componente} & \textbf{Caracter\'isticas} \\
+		\midrule
+		Sistema operativo & Windows 11 de 64 bits \\
+		Procesador & Intel Celeron N4000, 2 n\'ucleos y 2 hilos a 1.1GHz \\
+		Memoria & 8 GB \\
+		Almacenamiento & SSD de 447 GB \\
+		Nombre del equipo & --Por definir-- \\
+		Red & Hotspot m\'ovil con asignaci\'on din\'amica de direcciones y sin servidor DNS local \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+Estas caracter\'isticas determinan los siguientes criterios que gu\'ian la configuraci\'on de ambos gestores:
+
+\begin{itemize}[leftmargin=*]
+	\item \textbf{Memoria limitada y compartida.} El equipo no es un servidor dedicado, por lo que se destinan como m\'aximo alrededor de 2~GB de memoria al conjunto de las cuatro instancias. Dentro de ese l\'imite, la memoria de cada instancia se determina a partir del volumen de datos del sistema.
+	\item \textbf{Procesador de dos n\'ucleos.} Las cuatro instancias comparten dos n\'ucleos, por lo que se evita la ejecuci\'on de consultas en paralelo, que en estas condiciones compite por el procesador en lugar de acelerar el trabajo.
+	\item \textbf{Red sin direcciones fijas.} El hotspot asigna las direcciones en cada sesi\'on y no cuenta con DNS, por lo que la configuraci\'on no depende de ninguna direcci\'on concreta ni de la resoluci\'on de nombres de los clientes.
+\end{itemize}
+
+La figura~\ref{fig:equipo} muestra las especificaciones del equipo, tal como las reporta el sistema operativo.
+
+\captura{equipo.png}{Especificaciones del equipo servidor}{equipo}
+
+El volumen de datos del sistema, estimado a partir del diccionario de datos y del conjunto de datos de prueba, es del orden de decenas de megabytes, incluida la bit\'acora. La tabla~\ref{tab:presupuesto-memoria} muestra la distribuci\'on de memoria que resulta de estos criterios.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Distribuci\'on de memoria entre las instancias}
+	\label{tab:presupuesto-memoria}
+	\begin{tabular}{@{}L{4.5cm} L{5.5cm} L{4.5cm}@{}}
+		\toprule
+		\textbf{Instancias} & \textbf{Memoria compartida por instancia} & \textbf{Consumo estimado} \\
+		\midrule
+		PostgreSQL (2) & 128~MB (\nem{shared\us buffers}) & 550~MB \\
+		MySQL (2) & 128~MB (\nem{innodb\us buffer\us pool\us size}) & 650~MB \\
+		\midrule
+		\textbf{Total} & 512~MB en total (256~MB por gestor) & \textbf{Alrededor de 1.2~GB} \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+La memoria compartida corresponde a los valores configurados en cada gestor. El consumo total es una estimación que agrega la memoria de los procesos de fondo y de un número reducido de conexiones simultáneas; su valor real se verifica con el monitor de recursos del sistema operativo una vez que las instancias se encuentran en funcionamiento.
+
+La figura~\ref{fig:memoria} muestra el consumo de memoria medido con las cuatro instancias en funcionamiento.
+
+\captura{memoria.png}{Consumo de memoria de las instancias en el monitor de recursos}{memoria}
+
+\paragraph{Configuraci\'on de la segunda instancia.} Todos los par\'ametros descritos en este cap\'itulo se aplican con el mismo valor en la segunda instancia de cada gestor. De esta forma, ambas instancias se comportan igual y las diferencias entre ellas se deben \'unicamente al particionamiento y la segmentaci\'on de su esquema. Las \'unicas excepciones son los valores que identifican a cada instancia y que no pueden repetirse en un mismo equipo, como el puerto, el directorio de datos y el directorio de los tablespaces; estos se describen en el cap\'itulo de multi-instancias.
+
+\section{PostgreSQL}
+
+\subsection{Directorios}
+
+La primera instancia conserva las rutas que establece el instalador, mostradas en la tabla~\ref{tab:directorios-pg}. Al tratarse de la instancia de referencia, mantener la ubicaci\'on est\'andar facilita su localizaci\'on y conserva el servicio de Windows que el instalador registra. La segunda instancia utiliza directorios propios, ya que dos instancias no pueden compartir el mismo directorio de datos.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Directorios de la primera instancia de PostgreSQL}
+	\label{tab:directorios-pg}
+	\begin{tabular}{@{}L{2.3cm} L{7.2cm} L{5.6cm}@{}}
+		\toprule
+		\textbf{Directorio} & \textbf{Ruta} & \textbf{Contenido} \\
+		\midrule
+		Programas & \nem{C:\bs Program Files\bs PostgreSQL\bs 17\bs bin} & Servidor y herramientas cliente (\nem{psql}, \nem{pg\us dump}) \\
+		Datos & \nem{C:\bs Program Files\bs PostgreSQL\bs 17\bs data} & Archivos de la base de datos y de configuraci\'on (\nem{postgresql.conf}, \nem{pg\us hba.conf}) \\
+		Registros & \nem{C:\bs Program Files\bs PostgreSQL\bs 17\bs data\bs log} & Archivos de registro del servidor \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+Los programas y los datos se encuentran en directorios separados, de modo que una actualizaci\'on del gestor no modifica los datos, y el respaldo de la instancia se limita al directorio de datos.
+
+La versión instalada y el directorio de datos se verifican desde el propio gestor (figura~\ref{fig:pg-version}):
+
+\begin{verbatim}
+	SELECT version();
+	SHOW data_directory;
+\end{verbatim}
+
+\captura{pg-version.png}{Versión y directorio de datos de PostgreSQL}{pg-version}
+
+\subsection{Variables}
+
+\paragraph{Variables de entorno.} Se agrega el directorio de programas a la variable \nem{PATH}, lo que permite ejecutar las herramientas cliente desde cualquier terminal. No se define la variable \nem{PGDATA}: con dos instancias en el mismo equipo, una variable que señala un único directorio de datos haría ambiguo a qué instancia se dirige cada comando. Por ello, el directorio de cada instancia se indica de forma explícita.
+
+La figura~\ref{fig:pg-path} muestra la ejecución de \nem{psql --version} desde una terminal abierta en una carpeta cualquiera, lo que confirma que el directorio de programas se encuentra en \nem{PATH}.
+
+\captura{pg-path.png}{Herramientas de PostgreSQL disponibles desde la terminal}{pg-path}
+
+\paragraph{Parámetros del servidor.} La tabla~\ref{tab:parametros-pg} muestra los parámetros de \nem{postgresql.conf} que se modifican.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Parámetros modificados en PostgreSQL}
+	\label{tab:parametros-pg}
+	\begin{tabular}{@{}L{3.4cm} L{1.9cm} L{2.5cm} L{7.6cm}@{}}
+		\toprule
+		\textbf{Parámetro} & \textbf{Por defecto} & \textbf{Configurado} & \textbf{Justificación} \\
+		\midrule
+		\nem{effective\us cache\us size} & 4GB & 512MB & No reserva memoria: indica al planificador la caché realmente disponible, para que no elija	planes de ejecución pensados para memoria que el equipo no tiene. \\
+		\nem{max\us connections} & 100 & 30 & Cada conexión reserva memoria, y el número de usuarios del sistema no requiere más conexiones. \\
+		\nem{max\us parallel\us workers\us per\us gather} & 2 & 0 & Evita la ejecución en paralelo, ya que los dos núcleos se comparten entre cuatro	instancias. \\
+		\nem{idle\us in\us transaction\us session\us timeout} & 0 & 10min &	Cierra las sesiones que mantienen una transacción abierta sin actividad, que podrían bloquear tablas para el resto de los usuarios. \\
+		\nem{timezone} & Del sistema & \nem{America/\allowbreak Mexico\us City} & Fija la hora local en el gestor, sin depender de la configuración del sistema operativo. \\
+		\nem{datestyle} & Según el idioma del sistema & \nem{ISO, DMY} & Interpreta las fechas en el orden día, mes y año utilizado en el diccionario de datos. \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+Los demás parámetros conservan su valor por defecto por considerarse adecuados para el sistema. Destacan \nem{shared\us buffers} (128~MB), que basta para mantener en memoria el volumen completo de datos; \nem{work\us mem} (4~MB) y \nem{maintenance\us work\us mem} (64~MB), suficientes para las operaciones de ordenamiento y mantenimiento sobre ese volumen; y \nem{autovacuum}, que se mantiene activo para conservar actualizadas las estadísticas y recuperar el espacio de las filas modificadas sin intervención manual. La instancia utiliza la codificación UTF-8, que admite los acentos y la letra ñ presentes en nombres y domicilios.
+
+Los valores aplicados se consultan en la vista \nem{pg\us settings}, cuya columna \nem{source} indica si el valor proviene del archivo de configuración o es el valor por defecto (figura~\ref{fig:pg-parametros}):
+
+\begin{verbatim}
+	SELECT name, setting, unit, source
+	FROM pg_settings
+	WHERE name IN ('effective_cache_size', 'max_connections',
+	               'max_parallel_workers_per_gather',
+	               'idle_in_transaction_session_timeout',
+	               'TimeZone', 'DateStyle', 'shared_buffers',
+	               'work_mem', 'maintenance_work_mem', 'autovacuum');
+\end{verbatim}
+
+\captura{pg-parametros.png}{Parámetros del servidor aplicados en PostgreSQL}{pg-parametros}
+
+\paragraph{Parámetros de registro de actividad.} La tabla~\ref{tab:registro-pg} muestra los parámetros que determinan qué registra la instancia en sus archivos de registro, los cuales constituyen la bitácora de instancia.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Parámetros de registro de actividad en PostgreSQL}
+	\label{tab:registro-pg}
+	\begin{tabular}{@{}L{3.4cm} L{2.4cm} L{2.6cm} L{7cm}@{}}
+		\toprule
+		\textbf{Parámetro} & \textbf{Por defecto} & \textbf{Configurado} & \textbf{Justificación} \\
+		\midrule
+		\nem{logging\us collector} & \nem{on} (instalador) & \nem{on} & Guarda los mensajes del servidor en archivos; sin él, la bitácora de instancia	no se conserva. Se mantiene el valor que establece el instalador. \\
+		\nem{log\us directory} & \nem{log} & \nem{log} & La ruta es relativa al directorio de datos, por lo que cada instancia guarda sus registros en su propio directorio sin necesidad de cambiar el valor. \\
+		\nem{log\us filename} & \nem{postgresql-\allowbreak\%Y-\%m-\%d\us \%H\%M\%S.log} & \nem{postgresql-\allowbreak\%Y-\%m-\%d.log} & Un archivo por día, identificado por su fecha, en lugar de uno por cada inicio del	servidor. \\
+		\nem{log\us statement} & \nem{none} & \nem{mod} & Registra las sentencias que crean o modifican estructuras y datos (DDL y DML). Se excluyen las consultas, que aumentarían el volumen del registro sin	reflejar cambios. \\
+		\nem{log\us connections} & \nem{off} & \nem{on} & Registra cada inicio de sesión, con el usuario y el origen. \\
+		\nem{log\us disconnections} & \nem{off} & \nem{on} & Registra el cierre	de cada sesión y su duración. \\
+		\nem{log\us line\us prefix} & \nem{'\%m [\%p] '} & \nem{'\%m [\%p] \%u@\%d \%r '} & Agrega a cada línea el usuario, la base de datos y el equipo de origen. Sin ellos, el registro indica qué se ejecutó, pero no quién ni desde dónde. \\
+		\nem{log\us timezone} & Del sistema & \nem{America/\allowbreak Mexico\us City} & Las horas del registro coinciden con la zona horaria del gestor y con la de MySQL. \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+El parámetro \nem{log\us hostname} conserva su valor por defecto (\nem{off}): el registro anota la dirección IP del cliente y no intenta resolver su nombre, lo que en una red sin DNS solo añadiría demoras.
+
+\begin{verbatim}
+	SELECT name, setting, source
+	FROM pg_settings
+	WHERE name IN ('logging_collector', 'log_directory', 'log_filename',
+	               'log_statement', 'log_connections', 'log_disconnections',
+	               'log_line_prefix', 'log_timezone', 'log_hostname');
+\end{verbatim}
+
+\captura{pg-registro.png}{Parámetros de registro de actividad aplicados en PostgreSQL}{pg-registro}	
+
+\subsection{Conexi\'on}
+
+La instancia escucha en todas las interfaces de red (\nem{listen\us addresses = '*'}), tanto IPv4 como IPv6, y en el puerto estándar 5432. No se fija una dirección concreta porque el hotspot la asigna en cada sesión. Los clientes se conectan utilizando el nombre del equipo servidor, que se resuelve en la red local sin necesidad de DNS; de esta forma, las conexiones no deben reconfigurarse cuando cambia la dirección. Si la resolución de nombres no está disponible, se utiliza la dirección IP del momento.
+
+El acceso se controla mediante \nem{pg\us hba.conf}, cuyas reglas se evalúan en orden y se aplica la primera que coincide. La tabla~\ref{tab:pg-hba} muestra las reglas de la instancia.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Reglas de acceso de \nem{pg\us hba.conf}}
+	\label{tab:pg-hba}
+	\begin{tabular}{@{}l l l l l L{4.6cm}@{}}
+		\toprule
+		\textbf{Tipo} & \textbf{Base} & \textbf{Usuario} & \textbf{Dirección} &	\textbf{Método} & \textbf{Origen} \\
+		\midrule
+		\nem{host} & \nem{all} & \nem{all} & \nem{127.0.0.1/32} & \nem{scram-sha-256} & Instalador \\
+		\nem{host} & \nem{all} & \nem{all} & \nem{::1/128} & \nem{scram-sha-256} & Instalador \\
+		\nem{host} & \nem{all} & \nem{postgres} & \nem{samenet} & \nem{reject} & Agregada \\
+		\nem{host} & \nem{inversiones} & \nem{all} & \nem{samenet} & \nem{scram-sha-256} & Agregada \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+Las dos primeras reglas, creadas por el instalador, permiten las conexiones desde el propio servidor. La tercera impide que el superusuario se conecte desde la red, de modo que la administración de la instancia solo es posible desde el servidor. La cuarta permite que el resto de los usuarios se conecten a la base de datos del sistema desde cualquier equipo de la misma subred que el servidor. La palabra \nem{samenet} se adapta a la subred del momento, por lo que la regla no depende de las direcciones dinámicas del hotspot.
+
+Las contraseñas se almacenan con \nem{scram-sha-256}, el valor por defecto de \nem{password\us encryption} y el método de autenticación más seguro que ofrece el gestor.	
+
+La conexión desde un equipo cliente se verifica utilizando el nombre del equipo servidor (figura~\ref{fig:pg-remota}). La función \nem{inet\us client\us addr} muestra la dirección desde la que el servidor recibe la conexión. La figura~\ref{fig:pg-rechazo} muestra que el superusuario es rechazado al intentar conectarse desde la red.
+
+\begin{verbatim}
+	SELECT current_user, inet_client_addr();
+\end{verbatim}
+
+\captura{pg-remota.png}{Conexión remota a PostgreSQL por nombre del servidor}{pg-remota}
+
+\captura{pg-rechazo.png}{Rechazo de la conexión remota del superusuario en PostgreSQL}{pg-rechazo}
+
+\section{MySQL}
+\subsection{Directorios}
+
+Al igual que en PostgreSQL, la primera instancia conserva las rutas del instalador, mostradas en la tabla~\ref{tab:directorios-mysql}, y la segunda instancia utiliza directorios propios.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Directorios de la primera instancia de MySQL}
+	\label{tab:directorios-mysql}
+	\begin{tabular}{@{}L{3.2cm} L{7.2cm} L{5.6cm}@{}}
+		\toprule
+		\textbf{Directorio} & \textbf{Ruta} & \textbf{Contenido} \\
+		\midrule
+		Programas & \nem{C:\bs Program Files\bs MySQL\bs MySQL Server 8.0\bs bin} &	Servidor y herramientas cliente (\nem{mysql}, \nem{mysqldump}) \\
+		Configuración & \nem{C:\bs ProgramData\bs MySQL\bs MySQL Server 8.0\bs my.ini} & Parámetros del servidor \\
+		Datos & \nem{C:\bs ProgramData\bs MySQL\bs MySQL Server 8.0\bs Data} & Archivos de la base de datos y registros del servidor \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+En MySQL, el instalador separa los programas, ubicados en \nem{Program Files}, de los datos y la configuración, ubicados en \nem{ProgramData}. Con ello se obtiene la misma ventaja descrita para PostgreSQL: las actualizaciones no afectan los datos y el respaldo se limita a un solo directorio.
+
+\begin{verbatim}
+	SELECT VERSION(), @@basedir, @@datadir;
+\end{verbatim}
+
+\captura{mysql-version.png}{Versión y directorios de MySQL}{mysql-version}
+
+\subsection{Variables}
+
+\paragraph{Variables de entorno.} Se agrega el directorio de programas a la variable \nem{PATH} para ejecutar las herramientas cliente desde cualquier terminal. El archivo de configuración de cada instancia se indica de forma explícita, por la misma razón expuesta para PostgreSQL.
+
+La figura~\ref{fig:mysql-path} muestra la ejecución de \nem{mysql --version} desde una terminal abierta en una carpeta cualquiera.
+
+\captura{mysql-path.png}{Herramientas de MySQL disponibles desde la	terminal}{mysql-path}
+
+\paragraph{Parámetros del servidor.} La tabla~\ref{tab:parametros-mysql} muestra los parámetros de \nem{my.ini} que se modifican.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Parámetros modificados en MySQL}
+	\label{tab:parametros-mysql}
+	\begin{tabular}{@{}L{3.4cm} L{1.9cm} L{2.5cm} L{7.6cm}@{}}
+		\toprule
+		\textbf{Parámetro} & \textbf{Por defecto} & \textbf{Configurado} & \textbf{Justificación} \\
+		\midrule
+		\nem{innodb\us buffer\us pool\us size} & Valor del instalador & 128M & Se fija explícitamente el valor por defecto del gestor, ya que el instalador puede asignar otro según el tipo de equipo elegido. Basta para mantener en memoria el volumen completo de datos. \\
+		\nem{max\us connections} & 151 & 30 & Cada conexión reserva memoria, y el número de usuarios del sistema no requiere más conexiones. \\
+		\nem{skip\us name\us resolve} & OFF & ON & Evita que el servidor intente resolver el nombre de cada cliente al conectarse. Sin DNS en la red, esa resolución vuelve lentas las conexiones o hace que fallen. Requiere cuentas de \nem{root} para las direcciones de loopback (sección~\ref{sec:conexion-mysql}). \\
+		\nem{wait\us timeout} & 28800 (8 h) & 600 (10 min) & Cierra las	conexiones inactivas. Las conexiones a través del hotspot se interrumpen con facilidad y dejan sesiones abiertas que ocupan conexiones disponibles. \\
+		\nem{default\us time\us zone} & \nem{SYSTEM} & \nem{'-06:00'} & Fija la	hora local en el gestor. Se utiliza el desplazamiento horario porque en	Windows el gestor no incluye las zonas horarias con nombre, y México ya no aplica horario de verano. \\
+		\nem{innodb\us directories} & Vacío & \nem{C:/\allowbreak tablespaces/\allowbreak mysql1} & Declara la ubicación de los tablespaces fuera del directorio de datos; sin ella, el gestor rechaza crearlos en esa ruta (capítulo~\ref{cap:tablespaces}). \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+Los demás parámetros conservan su valor por defecto. Destacan el modo SQL estricto (\nem{sql\us mode}), que rechaza los datos inválidos en lugar de truncarlos o ajustarlos, y \nem{character\us set\us server} con el valor \nem{utf8mb4}, que admite acentos y la letra ñ. El parámetro \nem{lower\us case\us table\us names} conserva el valor 1, propio de Windows; como solo puede definirse al inicializar la instancia y todos los nombres del esquema están en minúsculas, no requiere modificarse.
+
+Los valores aplicados se consultan con \nem{SHOW GLOBAL VARIABLES} (figura~\ref{fig:mysql-parametros}):
+
+\begin{verbatim}
+	SHOW GLOBAL VARIABLES
+	WHERE Variable_name IN ('innodb_buffer_pool_size',
+	                        'max_connections', 'skip_name_resolve',
+	                        'wait_timeout', 'time_zone', 'sql_mode',
+	                        'character_set_server', 'lower_case_table_names');
+\end{verbatim}
+
+\captura{mysql-parametros.png}{Parámetros del servidor aplicados en MySQL}{mysql-parametros}
+
+\paragraph{Parámetros de registro de actividad.} La tabla~\ref{tab:registro-mysql} muestra los parámetros que determinan qué registra la instancia en sus archivos de registro, los cuales constituyen la bitácora de instancia.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Parámetros de registro de actividad en MySQL}
+	\label{tab:registro-mysql}
+	\begin{tabular}{@{}L{3.4cm} L{2.4cm} L{2.6cm} L{7cm}@{}}
+		\toprule
+		\textbf{Parámetro} & \textbf{Por defecto} & \textbf{Configurado} & \textbf{Justificación} \\
+		\midrule
+		\nem{general\us log} & \nem{OFF} & \nem{ON} & Activa el registro general, que anota cada conexión y cada sentencia recibida por el servidor. \\
+		\nem{general\us log\us file} & Nombre del equipo & \nem{general.log} & Un nombre fijo y descriptivo. La ruta es relativa al directorio de datos, por lo que cada instancia guarda su propio archivo con el mismo valor. \\
+		\nem{log\us output} & \nem{FILE} & \nem{FILE} & El registro se guarda en archivo, igual que en PostgreSQL, y no ocupa espacio dentro de la base de datos. \\
+		\nem{log\us timestamps} & \nem{UTC} & \nem{SYSTEM} & Las horas del registro se expresan en la hora local, en lugar de la hora universal, para coincidir con PostgreSQL. \\
+		\nem{log\us bin} & \nem{ON} & \nem{ON} & El registro binario conserva los cambios a los datos y permite reconstruirlos. Se mantiene activo, como establece el gestor por defecto. \\
+		\nem{log\us bin\us trust\us function\us creators} & \nem{OFF} & \nem{ON} & Con el registro binario activo, el gestor solo permite crear triggers a cuentas con el privilegio \nem{SUPER}. Activarlo permite que el DBA, que no es superusuario, cree los triggers del esquema. \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+A diferencia de PostgreSQL, el registro general de MySQL no permite filtrar las sentencias por tipo, por lo que también anota las consultas. Se acepta este volumen adicional porque el número de usuarios es reducido y el equipo cuenta con espacio de almacenamiento suficiente. El registro de errores (\nem{log\us error}) y la vigencia del registro binario (\nem{binlog\us expire\us logs\us seconds}, 30 días) conservan su valor por defecto.
+
+\begin{verbatim}
+	SHOW GLOBAL VARIABLES
+	WHERE Variable_name IN ('general_log', 'general_log_file', 'log_output',
+	                        'log_timestamps', 'log_bin', 'log_error',
+	                        'binlog_expire_logs_seconds');
+\end{verbatim}
+
+\captura{mysql-registro.png}{Parámetros de registro de actividad aplicados en MySQL}{mysql-registro}
+
+\subsection{Conexi\'on}
+\label{sec:conexion-mysql}
+
+El servidor escucha en todas las interfaces de red, el valor por defecto de \nem{bind\us address} (\nem{*}), tanto en IPv4 como en IPv6, y en el puerto estándar 3306. Se conserva este valor porque el nombre del equipo servidor puede resolverse a una dirección IPv6, y escuchar únicamente en IPv4 haría que esas conexiones fallaran. Los clientes se conectan utilizando el nombre del equipo servidor y, si la resolución no está disponible, la dirección IP del momento.
+
+En MySQL, el origen permitido forma parte de cada cuenta de usuario:
+
+\begin{itemize}[leftmargin=*]
+	\item \textbf{Superusuario.} Solo existen cuentas de \nem{root} para el propio servidor: \nem{'root'@'localhost'}, creada por el instalador, y \nem{'root'@'127.0.0.1'} y \nem{'root'@'::1'}, que se agregan para las direcciones de loopback de IPv4 e IPv6. De este modo, la administración de la instancia solo es posible desde el servidor.
+	\item \textbf{Usuarios de operación.} Se definen con el origen \nem{'\%'}, es decir, desde cualquier dirección. MySQL no cuenta con un equivalente a \nem{samenet}, y la subred del hotspot cambia entre sesiones, por lo que restringir el origen a una subred concreta obligaría a modificar las cuentas en cada sesión. El acceso queda protegido por la autenticación de cada usuario y por los privilegios de su rol, descritos en el capítulo de usuarios y roles.
+\end{itemize}
+
+\paragraph{Cuentas de loopback del superusuario.} Las cuentas adicionales de \nem{root} son consecuencia de \nem{skip\us name\us resolve}. En Windows, el cliente \nem{mysql} se conecta a \nem{localhost} por TCP/IP, porque la memoria compartida y las canalizaciones con nombre están desactivadas por defecto, de modo que el servidor recibe la conexión desde \nem{127.0.0.1} o \nem{::1}. Sin resolución de nombres, el servidor ya no asocia esas direcciones con el nombre \nem{localhost}, por lo que la cuenta del instalador deja de coincidir y rechaza al superusuario con el error 1130 (\nem{Host '127.0.0.1' is not allowed to connect}). Por ello, las cuentas se crean antes de activar el parámetro, con la misma contraseña y los mismos privilegios que \nem{'root'@'localhost'}:
+
+\begin{verbatim}
+	-- Superusuario, antes de activar skip_name_resolve
+	CREATE USER 'root'@'127.0.0.1' IDENTIFIED BY '********';
+	GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION;
+	CREATE USER 'root'@'::1' IDENTIFIED BY '********';
+	GRANT ALL PRIVILEGES ON *.* TO 'root'@'::1' WITH GRANT OPTION;
+\end{verbatim}
+
+\nem{ALL PRIVILEGES} sobre \nem{*.*} incluye los privilegios dinámicos, entre ellos \nem{SYSTEM\us USER}, así que las tres cuentas tienen las mismas facultades. Como ninguna admite conexiones desde otra dirección, \nem{root} sigue sin poder conectarse desde la red.
+
+La autenticación utiliza \nem{caching\us sha2\us password}, el método por defecto del gestor y el más seguro que ofrece.
+
+Las cuentas y su origen permitido se consultan en \nem{mysql.user} (figura~\ref{fig:mysql-cuentas}). Además de las cuentas descritas, la consulta muestra las cuentas internas del gestor (\nem{mysql.infoschema}, \nem{mysql.session} y \nem{mysql.sys}), que están bloqueadas y solo existen para \nem{localhost}. La figura~\ref{fig:mysql-remota} muestra la conexión desde un equipo cliente por el nombre del servidor, donde \nem{USER()} indica el origen real de la conexión y \nem{CURRENT\us USER()} la cuenta con la que se autenticó. La figura~\ref{fig:mysql-rechazo} muestra el rechazo de \nem{root} al intentar conectarse desde la red.
+
+\begin{verbatim}
+	SELECT user, host FROM mysql.user;
+	SELECT USER(), CURRENT_USER();
+\end{verbatim}
+
+\captura{mysql-cuentas.png}{Cuentas de usuario y origen permitido en MySQL}{mysql-cuentas}
+
+\captura{mysql-remota.png}{Conexión remota a MySQL por nombre del servidor}{mysql-remota}
+
+\captura{mysql-rechazo.png}{Rechazo de la conexión remota de \nem{root} en MySQL}{mysql-rechazo}

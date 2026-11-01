@@ -1,0 +1,125 @@
+\chapter{Diccionario de datos}
+
+El diccionario de datos lista los atributos del esquema organizados por tabla. La tabla~\ref{tab:convenciones} describe las convenciones utilizadas.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Convenciones del diccionario de datos}
+	\label{tab:convenciones}
+	\begin{tabular}{@{}l p{12.5cm}@{}}
+		\toprule
+		\textbf{Convención} & \textbf{Significado} \\
+		\midrule
+		Formato & A = letra, 9 = dígito, X = letra o dígito. Los guiones del RFC no se almacenan. \\
+		Rango & Longitud máxima en texto, o precisión y escala en decimales. \\
+		Llave & PK = primaria, AK = alterna, FK = foránea. \\
+		Referencia & Tabla y columna referenciadas; entre paréntesis, la acción al eliminar y al actualizar el registro referenciado. \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+\section{Tabla empresa}
+
+\begin{diccionario}{empresa}
+	\nem{empresa\us rfc} & RFC de la empresa emisora & VARCHAR & AAA(A)\allowbreak 999999XXX & 13 & No & PK natural & --- \\
+	\nem{empresa\us nombre} & Nombre o razón social de la empresa & VARCHAR & AAAA & 100 & No & --- & --- \\
+	\nem{empresa\us direccion} & Domicilio fiscal de la empresa & VARCHAR & AAAA & 150 & No & --- & --- \\
+\end{diccionario}
+
+\section{Tabla sucursal}
+
+\begin{diccionario}{sucursal}
+	\nem{sucursal\us num} & Clave de la sucursal & INT & $>0$, autoincremental & --- & No & PK sustituta & --- \\
+	\nem{empresa\us rfc} & Empresa a la que pertenece la sucursal & VARCHAR & AAA(A)\allowbreak 999999XXX & 13 & No & FK & \nem{empresa.\allowbreak empresa\us rfc} (RESTRICT, CASCADE) \\
+	\nem{sucursal\us nombre} & Nombre de la sucursal & VARCHAR & AAAA & 60 & No & --- & --- \\
+	\nem{sucursal\us ciudad} & Ciudad de la sucursal; lugar de suscripción de sus pagarés & VARCHAR & AAAA & 100 & No & --- & --- \\
+	\nem{sucursal\us direccion} & Domicilio de la sucursal & VARCHAR & AAAA & 150 & No & --- & --- \\
+\end{diccionario}
+
+
+\section{Tabla cliente}
+
+\begin{diccionario}{cliente}
+	\nem{cliente\us num} & Clave del cliente & INT & $>0$, autoincremental & --- & No & PK sustituta & --- \\
+	\nem{cliente\us rfc} & RFC del cliente & CHAR & AAAA999999XXX & 13 & No & AK & --- \\
+	\nem{cliente\us nombre} & Nombre(s) del cliente & VARCHAR & AAAA & 60 & No & --- & --- \\
+	\nem{cliente\us apellido} & Apellidos del cliente & VARCHAR & AAAA & 80 & No & --- & --- \\
+	\nem{cliente\us direccion} & Domicilio del cliente & VARCHAR & AAAA & 150 & No & --- & --- \\
+	\nem{cliente\us telefono} & Teléfono del cliente & VARCHAR & 10 a 15 dígitos & 15 & No & --- & --- \\
+\end{diccionario}
+
+\section{Tabla aval}
+
+\begin{diccionario}{aval}
+	\nem{aval\us num} & Clave del aval & INT & $>0$, autoincremental & --- & No & PK sustituta & --- \\
+	\nem{aval\us rfc} & RFC del aval & CHAR & AAAA999999XXX & 13 & No & AK & --- \\
+	\nem{aval\us nombre} & Nombre(s) del aval & VARCHAR & AAAA & 60 & No & --- & --- \\
+	\nem{aval\us apellido} & Apellidos del aval & VARCHAR & AAAA & 80 & No & --- & --- \\
+	\nem{aval\us direccion} & Domicilio del aval & VARCHAR & AAAA & 150 & No & --- & --- \\
+\end{diccionario}
+
+\section{Tabla inversion}
+
+\begin{diccionario}{inversion}
+	\nem{inversion\us num} & Clave de la inversión & INT & $>0$, autoincremental & --- & No & PK sustituta & --- \\
+	\nem{pagare\us num} & Número del pagaré & VARCHAR & 9999/9999 (consecutivo/año) & 30 & No & AK & --- \\
+	\nem{sucursal\us num} & Sucursal donde se suscribió el pagaré & INT & $>0$ & --- & No & FK & \nem{sucursal.\allowbreak sucursal\us num} (RESTRICT, RESTRICT) \\
+	\nem{cliente\us num} & Cliente que invierte (acreedor) & INT & $>0$ & --- & No & FK & \nem{cliente.\allowbreak cliente\us num} (RESTRICT, RESTRICT) \\
+	\nem{aval\us num} & Aval que garantiza el pago de la empresa, si existe & INT & $>0$; RFC distinto del RFC del cliente & --- & Sí & FK & \nem{aval.\allowbreak aval\us num} (RESTRICT, RESTRICT) \\
+	\nem{inversion\us capital} & Capital invertido (``bueno por'') & DECIMAL & $>0$, 0.00 & 14,2 & No & --- & --- \\
+	\nem{inversion\us tasa} & Tasa mensual de interés ordinario & DECIMAL & 0.0000 a 99.9999 (porcentaje) & 6,4 & No & --- & --- \\
+	\nem{inversion\us tasa\us moratoria} & Tasa mensual de interés moratorio & DECIMAL & 0.0000 a 99.9999 (porcentaje) & 6,4 & No & --- & --- \\
+	\nem{inversion\us dia\us pago} & Día de pago de cada mes & SMALLINT & 1 a 28 & --- & No & --- & --- \\
+	\nem{pagare\us fecha} & Fecha de suscripción del pagaré & DATE & DD/MM/YYYY & --- & No & --- & --- \\
+	\nem{inversion\us moneda} & Moneda del pagaré & CHAR & AAA (ISO 4217), por defecto MXN & 3 & No & --- & --- \\
+	\nem{pagare\us jurisdiccion} & Ciudad de los tribunales competentes en caso de disputa & VARCHAR & AAAA & 100 & No & --- & --- \\
+	\nem{inversion\us fecha\us vencimiento} & Fecha de vencimiento del pagaré & DATE & DD/MM/YYYY, mayor a \nem{pagare\us fecha} & --- & No & --- & --- \\
+\end{diccionario}
+
+\section{Tabla interes}
+
+\begin{diccionario}{interes}
+	\nem{inversion\us num} & Inversión a la que pertenece el periodo & INT & $>0$ & --- & No & PK compuesta, FK & \nem{inversion.\allowbreak inversion\us num} (RESTRICT, RESTRICT) \\
+	\nem{interes\us fecha\us inicial} & Fecha inicial del periodo de interés & DATE & DD/MM/YYYY & --- & No & PK compuesta & --- \\
+	\nem{interes\us fecha\us final} & Fecha final del periodo (vence el pago) & DATE & DD/MM/YYYY, mayor a la inicial & --- & No & --- & --- \\
+	\nem{interes\us monto} & Interés programado del periodo & DECIMAL & $\geq 0$, 0.00 & 14,2 & No & --- & --- \\
+\end{diccionario}
+
+\clearpage
+
+\section{Tabla pago}
+
+\begin{diccionario}{pago}
+	\nem{inversion\us num} & Inversión pagada & INT & $>0$ & --- & No & PK compuesta, FK compuesta & \nem{interes} (\nem{inversion\us num}, \nem{interes\us fecha\us inicial}) (RESTRICT, RESTRICT) \\
+	\nem{interes\us fecha\us inicial} & Periodo que cubre el pago & DATE & DD/MM/YYYY & --- & No & PK compuesta, FK compuesta & \nem{interes} (\nem{inversion\us num}, \nem{interes\us fecha\us inicial}) (RESTRICT, RESTRICT) \\
+	\nem{pago\us fecha} & Fecha del pago (clave de partición) & DATE & DD/MM/YYYY & --- & No & PK compuesta & --- \\
+	\nem{pago\us interes} & Monto pagado por interés ordinario & DECIMAL & $\geq 0$, 0.00 & 14,2 & No & --- & --- \\
+	\nem{pago\us mora} & Monto pagado por interés moratorio & DECIMAL & $\geq 0$, 0.00, por defecto 0 & 14,2 & No & --- & --- \\
+\end{diccionario}
+
+\section{Tabla liquidacion}
+
+\begin{diccionario}{liquidacion}
+	\nem{inversion\us num} & Inversión liquidada & INT & $>0$ & --- & No & PK, FK & \nem{inversion.\allowbreak inversion\us num} (RESTRICT, RESTRICT) \\
+	\nem{liquidacion\us fecha} & Fecha de devolución del capital & DATE & DD/MM/YYYY, mayor o igual a \nem{inversion\us fecha\us vencimiento} & --- & No & --- & --- \\
+	\nem{liquidacion\us capital} & Capital devuelto & DECIMAL & $>0$, 0.00, igual a \nem{inversion\us capital} & 14,2 & No & --- & --- \\
+	\nem{liquidacion\us mora} & Interés moratorio pagado por devolución tardía del capital & DECIMAL & $\geq 0$, 0.00, por defecto 0 & 14,2 & No & --- & --- \\
+\end{diccionario}
+
+\clearpage
+
+\section{Tabla bitacora}
+
+\begin{diccionario}{bitacora}
+	\nem{bitacora\us num} & Número del registro de bitácora & BIGINT & $>0$, autoincremental & --- & No & PK compuesta & --- \\
+	\nem{bitacora\us fecha} & Fecha y hora del evento (clave de partición) & TIMESTAMP & DD/MM/YYYY HH:MM:SS & --- & No & PK compuesta & --- \\
+	\nem{bitacora\us usuario} & Usuario que inició la sesión (no el dueño ni el definer del trigger) & VARCHAR & AAAA & 100 & No & --- & --- \\
+	\nem{bitacora\us tabla} & Tabla afectada por la operación & VARCHAR & AAAA & 63 & No & --- & --- \\
+	\nem{bitacora\us operacion} & Tipo de operación ejecutada & VARCHAR & INSERT, UPDATE o DELETE & 6 & No & --- & --- \\
+	\nem{bitacora\us ip} & Dirección IP de origen & VARCHAR & IPv4 / IPv6 & 45 & Sí & --- & --- \\
+	\nem{bitacora\us sesion} & Identificador de sesión o transacción & BIGINT & $>0$ & --- & Sí & --- & --- \\
+	\nem{bitacora\us query} & Sentencia ejecutada & TEXT & AAAA & --- & Sí & --- & --- \\
+	\nem{bitacora\us dato\us anterior} & Valores antes del cambio & JSON & JSON & --- & Sí & --- & --- \\
+	\nem{bitacora\us dato\us nuevo} & Valores después del cambio & JSON & JSON & --- & Sí & --- & --- \\
+\end{diccionario}
