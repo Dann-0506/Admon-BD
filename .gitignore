@@ -13,6 +13,3 @@
 
 # Archivos de salida de LaTeX
 *.pdf
-
-# Archivos sql
-*.sql
