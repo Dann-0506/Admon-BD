@@ -230,7 +230,7 @@ Las tablas y sus restricciones se consultan en el catálogo del gestor (figura~\
 	ORDER BY 1, 3, 2;
 \end{verbatim}
 
-\captura{pg-tablas.png}{Tablas y restricciones del esquema en PostgreSQL}{pg-tablas}
+\captura[12cm]{pg-tablas.png}{Tablas y restricciones del esquema en PostgreSQL}{pg-tablas}
 
 \subsection{Objetos programados}
 
@@ -356,7 +356,7 @@ Como el día de pago es como máximo 28, sumar un mes a la fecha nunca produce u
 	WHERE NOT tgisinternal;
 \end{verbatim}
 
-\captura{pg-objetos.png}{Procedimiento, funciones y triggers en PostgreSQL}{pg-objetos}
+\captura[12.5cm]{pg-objetos.png}{Procedimiento, funciones y triggers en PostgreSQL}{pg-objetos}
 
 \subsection{Permisos}
 
@@ -1275,8 +1275,8 @@ La consulta siguiente, igual en ambos gestores, cuenta los registros de cada tab
 	UNION ALL SELECT 'bitacora',    COUNT(*) FROM bitacora;
 \end{verbatim}
 
-\captura{pg-datos-conteo.png}{Registros cargados en PostgreSQL}{pg-datos-conteo}
-\captura{mysql-datos-conteo.png}{Registros cargados en MySQL}{mysql-datos-conteo}
+\captura[10cm]{pg-datos-conteo.png}{Registros cargados en PostgreSQL}{pg-datos-conteo}
+\captura[10cm]{mysql-datos-conteo.png}{Registros cargados en MySQL}{mysql-datos-conteo}
 
 \section{Pruebas de alcance}
 \label{sec:pruebas-alcance}
@@ -1415,11 +1415,11 @@ Cada usuario se conecta con su propia cuenta y ejecuta sus sentencias:
 
 Las operaciones permitidas responden con \nem{UPDATE 1}, \nem{INSERT 0 1}, \nem{CALL} o el resultado de la consulta. Las denegadas por falta de privilegio responden con \nem{ERROR: permission denied for table}, seguido del nombre de la tabla, incluso en la actualización del RFC, porque el ejecutivo no tiene privilegio sobre esa columna. La eliminación de la inversión responde con \nem{ERROR: update or delete on table "inversion" violates foreign key constraint \ldots{} on table "interes"}.
 
-\captura{pg-alcance-gerente.png}{Pruebas de alcance del gerente en PostgreSQL}{pg-alcance-gerente}
-\captura{pg-alcance-ejecutivo.png}{Pruebas de alcance del ejecutivo en PostgreSQL}{pg-alcance-ejecutivo}
-\captura{pg-alcance-tesoreria.png}{Pruebas de alcance de tesorería en PostgreSQL}{pg-alcance-tesoreria}
-\captura{pg-alcance-auditor.png}{Pruebas de alcance del auditor en PostgreSQL}{pg-alcance-auditor}
-\captura{pg-alcance-respaldo.png}{Pruebas de alcance del respaldo en PostgreSQL}{pg-alcance-respaldo}
+\captura[12cm]{pg-alcance-gerente.png}{Pruebas de alcance del gerente en PostgreSQL}{pg-alcance-gerente}
+\captura[12cm]{pg-alcance-ejecutivo.png}{Pruebas de alcance del ejecutivo en PostgreSQL}{pg-alcance-ejecutivo}
+\captura[12cm]{pg-alcance-tesoreria.png}{Pruebas de alcance de tesorería en PostgreSQL}{pg-alcance-tesoreria}
+\captura[12cm]{pg-alcance-auditor.png}{Pruebas de alcance del auditor en PostgreSQL}{pg-alcance-auditor}
+\captura[12cm]{pg-alcance-respaldo.png}{Pruebas de alcance del respaldo en PostgreSQL}{pg-alcance-respaldo}
 
 \subsection{MySQL}
 
