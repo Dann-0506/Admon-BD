@@ -15,10 +15,10 @@ Ambos gestores se instalan en un mismo equipo, cuyas caracter\'isticas se muestr
 		\textbf{Componente} & \textbf{Caracter\'isticas} \\
 		\midrule
 		Sistema operativo & Windows 11 de 64 bits \\
-		Procesador & Intel Celeron N4000, 2 n\'ucleos y 2 hilos a 1.1GHz \\
+		Procesador & AMD Ryzen 7 3700U a 2.30 GHz \\
 		Memoria & 8 GB \\
 		Almacenamiento & SSD de 447 GB \\
-		Nombre del equipo & --Por definir-- \\
+		Nombre del equipo & Armando \\
 		Red & Hotspot m\'ovil con asignaci\'on din\'amica de direcciones y sin servidor DNS local \\
 		\bottomrule
 	\end{tabular}
@@ -28,13 +28,13 @@ Estas caracter\'isticas determinan los siguientes criterios que gu\'ian la confi
 
 \begin{itemize}[leftmargin=*]
 	\item \textbf{Memoria limitada y compartida.} El equipo no es un servidor dedicado, por lo que se destinan como m\'aximo alrededor de 2~GB de memoria al conjunto de las cuatro instancias. Dentro de ese l\'imite, la memoria de cada instancia se determina a partir del volumen de datos del sistema.
-	\item \textbf{Procesador de dos n\'ucleos.} Las cuatro instancias comparten dos n\'ucleos, por lo que se evita la ejecuci\'on de consultas en paralelo, que en estas condiciones compite por el procesador en lugar de acelerar el trabajo.
+	\item \textbf{Procesador de cuatro n\'ucleos.} Las cuatro instancias comparten cuatro n\'ucleos, por lo que se evita la ejecuci\'on de consultas en paralelo, que en estas condiciones compite por el procesador en lugar de acelerar el trabajo.
 	\item \textbf{Red sin direcciones fijas.} El hotspot asigna las direcciones en cada sesi\'on y no cuenta con DNS, por lo que la configuraci\'on no depende de ninguna direcci\'on concreta ni de la resoluci\'on de nombres de los clientes.
 \end{itemize}
 
 La figura~\ref{fig:equipo} muestra las especificaciones del equipo, tal como las reporta el sistema operativo.
 
-\captura{equipo.png}{Especificaciones del equipo servidor}{equipo}
+\captura[10cm]{equipo.png}{Especificaciones del equipo servidor}{equipo}
 
 El volumen de datos del sistema, estimado a partir del diccionario de datos y del conjunto de datos de prueba, es del orden de decenas de megabytes, incluida la bit\'acora. La tabla~\ref{tab:presupuesto-memoria} muestra la distribuci\'on de memoria que resulta de estos criterios.
 
@@ -117,7 +117,7 @@ La figura~\ref{fig:pg-path} muestra la ejecución de \nem{psql --version} desde 
 		\midrule
 		\nem{effective\us cache\us size} & 4GB & 512MB & No reserva memoria: indica al planificador la caché realmente disponible, para que no elija	planes de ejecución pensados para memoria que el equipo no tiene. \\
 		\nem{max\us connections} & 100 & 30 & Cada conexión reserva memoria, y el número de usuarios del sistema no requiere más conexiones. \\
-		\nem{max\us parallel\us workers\us per\us gather} & 2 & 0 & Evita la ejecución en paralelo, ya que los dos núcleos se comparten entre cuatro	instancias. \\
+		\nem{max\us parallel\us workers\us per\us gather} & 2 & 0 & Evita la ejecución en paralelo, ya que los cuatro núcleos se comparten entre cuatro	instancias. \\
 		\nem{idle\us in\us transaction\us session\us timeout} & 0 & 10min &	Cierra las sesiones que mantienen una transacción abierta sin actividad, que podrían bloquear tablas para el resto de los usuarios. \\
 		\nem{timezone} & Del sistema & \nem{America/\allowbreak Mexico\us City} & Fija la hora local en el gestor, sin depender de la configuración del sistema operativo. \\
 		\nem{datestyle} & Según el idioma del sistema & \nem{ISO, DMY} & Interpreta las fechas en el orden día, mes y año utilizado en el diccionario de datos. \\
