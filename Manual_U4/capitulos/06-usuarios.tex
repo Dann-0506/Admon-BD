@@ -1,5 +1,4 @@
 \chapter{Usuarios y roles}
-\recursoscapitulo{06-usuarios}
 
 \section{Roles y matriz de privilegios}
 \label{sec:roles-matriz}
@@ -174,20 +173,6 @@ En PostgreSQL, roles y usuarios son el mismo tipo de objeto; la diferencia es qu
 Los privilegios de cada rol sobre las tablas, incluidos los de \nem{rol\us respaldo}, se otorgan en la implementación física, una vez que las tablas existen. En PostgreSQL, \nem{pg\us dump} solo requiere lectura sobre las tablas y las secuencias del esquema, por lo que el usuario de respaldo no
 necesita privilegios sobre la instancia.
 
-Los roles, sus atributos y la pertenencia de cada usuario se consultan en el catálogo del gestor (figura~\ref{fig:pg-roles}):
-
-\begin{verbatim}
-	SELECT u.rolname AS usuario, r.rolname AS rol,
-	       u.rolcanlogin AS inicia_sesion, r.rolcreaterole AS crea_roles
-	FROM pg_auth_members m
-	  JOIN pg_roles u ON u.oid = m.member
-	  JOIN pg_roles r ON r.oid = m.roleid
-	WHERE r.rolname LIKE 'rol\_%'
-	ORDER BY r.rolname;
-\end{verbatim}
-
-\captura[12cm]{pg-roles.png}{Roles y usuarios creados en PostgreSQL}{pg-roles}
-
 \section{Creaci\'on de roles y usuarios en MySQL}
 \label{sec:roles-mysql}
 
@@ -237,17 +222,3 @@ usuarios del personal:
 \end{verbatim}
 
 \nem{SHOW VIEW} y \nem{TRIGGER} permiten respaldar la definición de las vistas y los triggers; \nem{LOCK TABLES}, bloquear las tablas para obtener una copia consistente; \nem{PROCESS}, leer la información de los tablespaces; y \nem{SHOW\us ROUTINE}, respaldar los procedimientos almacenados.
-
-Los roles concedidos y los roles por defecto de cada usuario se consultan en las
-tablas del sistema (figura~\ref{fig:mysql-roles}):
-
-\begin{verbatim}
-	SELECT TO_USER AS usuario, FROM_USER AS rol
-	FROM mysql.role_edges
-	ORDER BY FROM_USER;
-
-	SELECT USER AS usuario, DEFAULT_ROLE_USER AS rol_por_defecto
-	FROM mysql.default_roles;
-\end{verbatim}
-
-\captura{mysql-roles.png}{Roles y usuarios creados en MySQL}{mysql-roles}

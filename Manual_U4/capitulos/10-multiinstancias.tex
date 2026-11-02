@@ -1,6 +1,5 @@
 \chapter{Multi-instancias}
 \label{cap:multiinstancias}
-\recursoscapitulo{10-multiinstancias}
 
 Una instancia es un servidor de base de datos en ejecución: un proceso del gestor con su propio directorio de datos, su configuración y su puerto. Un mismo equipo puede ejecutar varias instancias del mismo gestor, siempre que cada una tenga su propio directorio de datos y escuche en un puerto distinto.
 
@@ -74,19 +73,6 @@ En la copia de \nem{postgresql.conf} se cambia únicamente el puerto:
 	net start postgresql-x64-17-2
 \end{verbatim}
 
-\paragraph{Verificación.} El superusuario se conecta al puerto de la segunda instancia y consulta sus parámetros (figura~\ref{fig:pg-instancia2}). El puerto y el directorio de datos son propios de la instancia; los demás parámetros coinciden con los de la primera.
-
-\begin{verbatim}
-	SELECT name, setting
-	FROM pg_settings
-	WHERE name IN ('port', 'data_directory', 'listen_addresses',
-	               'logging_collector', 'log_statement', 'max_connections',
-	               'shared_buffers', 'TimeZone')
-	ORDER BY name;
-\end{verbatim}
-
-\captura{pg-instancia2.png}{Parámetros de la segunda instancia de PostgreSQL}{pg-instancia2}
-
 \section{Segunda instancia de MySQL}
 
 \paragraph{Directorio y configuración.} El superusuario del equipo crea el directorio de la instancia, le otorga permisos y copia en él el archivo \nem{my.ini} de la primera instancia:
@@ -143,15 +129,6 @@ La opción \nem{-{}-defaults-file} debe ser la primera de la línea de comandos.
 	net start MySQL80-2
 \end{verbatim}
 
-\paragraph{Verificación.} El superusuario se conecta al puerto de la segunda instancia y consulta sus parámetros (figura~\ref{fig:mysql-instancia2}):
-
-\begin{verbatim}
-	SELECT @@port, @@datadir, @@innodb_directories, @@mysqlx_port,
-	       @@max_connections, @@skip_name_resolve, @@general_log;
-\end{verbatim}
-
-\captura{mysql-instancia2.png}{Parámetros de la segunda instancia de MySQL}{mysql-instancia2}
-
 \section{Carga del esquema y los datos}
 
 La segunda instancia se construye con el mismo procedimiento que la primera, hasta tener el mismo esquema y los mismos datos. El esquema se crea con los scripts de los capítulos anteriores; los datos no se cargan de nuevo, sino que se copian de la primera instancia. La tabla~\ref{tab:secuencia-instancia2} muestra la secuencia completa.
@@ -178,7 +155,7 @@ La segunda instancia se construye con el mismo procedimiento que la primera, has
 
 A partir de ese punto, la segunda instancia recibe el particionamiento y la segmentación de los capítulos siguientes, que no se aplican a la primera.
 
-\paragraph{Por qué se copian los datos.} Volver a ejecutar la carga de datos de prueba no reproduciría el estado de la primera instancia, que también contiene los registros creados durante las pruebas de alcance: el cliente 26, la inversión 41 con sus periodos de interés, el pago de la inversión 16 y los 17 registros de bitácora que dejaron esas operaciones. La copia se toma después de las pruebas, por lo que la segunda instancia recibe exactamente los mismos registros, con las mismas llaves. Esto es posible gracias a que las columnas de identidad y \nem{AUTO\us INCREMENT} admiten valores explícitos (tabla~\ref{tab:equivalencia-tipos}). Después de la copia, cada gestor continúa la numeración a partir del valor más alto copiado.
+\paragraph{Por qué se copian los datos.} La copia reproduce exactamente las filas de la primera instancia, con sus mismas llaves, de modo que ambas instancias parten del mismo estado sin depender de que la carga de datos de prueba vuelva a ejecutarse de la misma forma. Esto es posible gracias a que las columnas de identidad y \nem{AUTO\us INCREMENT} admiten valores explícitos (tabla~\ref{tab:equivalencia-tipos}). Después de la copia, cada gestor continúa la numeración a partir del valor más alto copiado.
 
 \paragraph{Por qué la bitácora se activa después.} Los triggers de bitácora se crean después de la copia, igual que en la primera instancia se crearon después de la carga inicial. Si existieran durante la copia, cada registro copiado generaría un registro de auditoría, como si un usuario lo hubiera insertado. Los triggers de validación, en cambio, sí existen durante la copia y vuelven a validar los datos sin afectarlos.
 
@@ -201,7 +178,7 @@ A partir de ese punto, la segunda instancia recibe el particionamiento y la segm
 
 \nem{-{}-no-create-info} y \nem{-{}-skip-triggers} limitan el respaldo a los datos, ya que las tablas y los triggers existen en la segunda instancia; \nem{-{}-no-tablespaces} omite la información de los tablespaces, que requeriría el privilegio \nem{PROCESS}; y \nem{-{}-single-transaction} toma una copia consistente sin bloquear las tablas. \nem{mysqldump} escribe las tablas en orden alfabético, por ejemplo \nem{interes} antes que \nem{inversion}, por lo que el respaldo desactiva la verificación de llaves foráneas durante la carga (\nem{FOREIGN\us KEY\us CHECKS = 0}) y la restablece al final.
 
-\paragraph{Verificación.} La siguiente consulta, igual en ambos gestores, se ejecuta en las dos instancias; ambas deben devolver los mismos valores (figuras~\ref{fig:pg-instancias-datos} y~\ref{fig:mysql-instancias-datos}).
+\paragraph{Verificación.} La siguiente consulta, igual en ambos gestores, se ejecuta en las cuatro instancias; las dos instancias de cada gestor deben devolver los mismos valores (figura~\ref{fig:instancias-datos}).
 
 \begin{verbatim}
 	SELECT (SELECT COUNT(*) FROM cliente) AS clientes,
@@ -213,7 +190,6 @@ A partir de ese punto, la segunda instancia recibe el particionamiento y la segm
 	       (SELECT SUM(pago_interes) + SUM(pago_mora) FROM pago) AS total_pagado;
 \end{verbatim}
 
-Ambas instancias contienen 26 clientes, 41 inversiones, 651 periodos de interés, 479 pagos, 15 liquidaciones y 17 registros de bitácora, con el mismo total pagado.
+Ambas instancias contienen 25 clientes, 40 inversiones, 639 periodos de interés, 478 pagos, 15 liquidaciones y ningún registro de bitácora, con el mismo total pagado.
 
-\captura{pg-instancias-datos.png}{Datos de las dos instancias de PostgreSQL}{pg-instancias-datos}
-\captura{mysql-instancias-datos.png}{Datos de las dos instancias de MySQL}{mysql-instancias-datos}
+\captura{instancias-datos.png}{Datos de las cuatro instancias}{instancias-datos}

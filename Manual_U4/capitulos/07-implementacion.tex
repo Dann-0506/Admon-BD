@@ -1,5 +1,4 @@
 \chapter{Implementaci\'on f\'isica}
-\recursoscapitulo{07-implementacion}
 El esquema se implementa de la misma manera en ambos gestores: las mismas tablas, columnas, llaves y restricciones, con los mismos nombres. Las diferencias se limitan a la sintaxis y a los tipos de dato propios de cada gestor. Este cap\'itulo describe las decisiones comunes a ambas implementaciones.
 
 \paragraph{Equivalencia de tipos.} El diccionario de datos utiliza tipos genéricos. La tabla~\ref{tab:equivalencia-tipos} muestra su equivalencia en cada gestor.
@@ -67,13 +66,6 @@ Dentro de la base de datos, el DBA crea el esquema \nem{inversiones}, donde resi
 	ALTER DATABASE inversiones SET search_path TO inversiones;
 	DROP SCHEMA public;
 \end{verbatim}
-
-\begin{verbatim}
-	\l inversiones
-	\dn
-\end{verbatim}
-
-\captura{pg-base-datos.png}{Base de datos y esquema del sistema en PostgreSQL}{pg-base-datos}
 
 \subsection{Tablas}
 Las tablas se crean en el orden de sus dependencias: primero las tablas referenciadas y después las que contienen las llaves foráneas. El DBA las crea con el rol \nem{rol\us admin\us bd} activo, de modo que el rol es su dueño.
@@ -219,19 +211,6 @@ Las tablas se crean en el orden de sus dependencias: primero las tablas referenc
 
 La fecha de la bitácora se asigna con \nem{LOCALTIMESTAMP}, que devuelve la hora local sin zona horaria, en lugar de \nem{CURRENT\us TIMESTAMP}, que la incluye y obligaría a convertirla para almacenarla en una columna \nem{TIMESTAMP}.
 
-Las tablas y sus restricciones se consultan en el catálogo del gestor (figura~\ref{fig:pg-tablas}):
-
-\begin{verbatim}
-	SELECT conrelid::regclass AS tabla, conname AS restriccion,
-	       CASE contype WHEN 'p' THEN 'PK' WHEN 'u' THEN 'AK'
-	                    WHEN 'f' THEN 'FK' WHEN 'c' THEN 'CHECK' END AS tipo
-	FROM pg_constraint
-	WHERE connamespace = 'inversiones'::regnamespace
-	ORDER BY 1, 3, 2;
-\end{verbatim}
-
-\captura[12cm]{pg-tablas.png}{Tablas y restricciones del esquema en PostgreSQL}{pg-tablas}
-
 \subsection{Objetos programados}
 
 \paragraph{Procedimiento \nem{generar\us tabla\us interes}.} Genera los periodos de interés de una inversión a partir de las condiciones de su pagaré. Se implementa como procedimiento almacenado, y no como un cálculo que realice cada usuario, para que todas las tablas de interés se generen con la misma regla:
@@ -343,21 +322,6 @@ Como el día de pago es como máximo 28, sumar un mes a la fecha nunca produce u
 	  FOR EACH ROW EXECUTE FUNCTION fn_validar_liquidacion();
 \end{verbatim}
 
-\begin{verbatim}
-	SELECT p.proname AS objeto,
-	       CASE p.prokind WHEN 'p' THEN 'Procedimiento' ELSE 'Función' END AS tipo,
-	       pg_get_userbyid(p.proowner) AS dueno,
-	       p.prosecdef AS security_definer
-	FROM pg_proc p
-	WHERE p.pronamespace = 'inversiones'::regnamespace;
-
-	SELECT tgname AS trigger, tgrelid::regclass AS tabla
-	FROM pg_trigger
-	WHERE NOT tgisinternal;
-\end{verbatim}
-
-\captura[12.5cm]{pg-objetos.png}{Procedimiento, funciones y triggers en PostgreSQL}{pg-objetos}
-
 \subsection{Permisos}
 
 Los privilegios de la matriz de la tabla~\ref{tab:matriz} se otorgan a los roles, nunca a los usuarios, de modo que un cambio de puesto solo requiere cambiar el rol de la persona. Antes de otorgarlos, se retiran los privilegios que PostgreSQL concede por defecto a todos los usuarios (\nem{PUBLIC}): la conexión a la base de datos y la ejecución de funciones y procedimientos. Sin este paso, cualquier usuario de la instancia podría conectarse a la base de datos o ejecutar el procedimiento, aunque no tuviera un rol del sistema.
@@ -411,14 +375,6 @@ Los privilegios de la matriz de la tabla~\ref{tab:matriz} se otorgan a los roles
 
 El privilegio \nem{USAGE} sobre las secuencias de las columnas de identidad permite a los roles que insertan registros generar sus claves. El último bloque establece privilegios por defecto: toda tabla que el DBA cree después, como las particiones de la segunda instancia, será legible automáticamente por el auditor y por el usuario de respaldo, sin necesidad de otorgar el privilegio en cada ocasión.
 
-Los privilegios otorgados se consultan con el comando \nem{\textbackslash dp} (figura~\ref{fig:pg-permisos}):
-
-\begin{verbatim}
-	\dp inversiones.*
-\end{verbatim}
-
-\captura{pg-permisos.png}{Privilegios sobre las tablas en PostgreSQL}{pg-permisos}
-
 \section{MySQL}
 
 \subsection{Base de datos}
@@ -433,14 +389,6 @@ La base de datos utiliza la codificación \nem{utf8mb4} y la intercalación \nem
 	  CHARACTER SET utf8mb4
 	  COLLATE utf8mb4_0900_ai_ci;
 \end{verbatim}
-
-\begin{verbatim}
-	SELECT SCHEMA_NAME, DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME
-	FROM information_schema.SCHEMATA
-	WHERE SCHEMA_NAME = 'inversiones';
-\end{verbatim}
-
-\captura{mysql-base-datos.png}{Base de datos del sistema en MySQL}{mysql-base-datos}
 
 \subsection{Tablas}
 
@@ -586,17 +534,6 @@ Las tablas tienen las mismas columnas, llaves y restricciones que en PostgreSQL,
 
 En MySQL, \nem{CURRENT\us TIMESTAMP} asignado a una columna \nem{DATETIME} devuelve la hora local según la zona horaria del servidor (\nem{default\us time\us zone}), por lo que cumple la misma función que \nem{LOCALTIMESTAMP} en PostgreSQL.
 
-Las restricciones de cada tabla se consultan en el diccionario de datos del gestor (figura~\ref{fig:mysql-tablas}):
-
-\begin{verbatim}
-	SELECT TABLE_NAME, CONSTRAINT_NAME, CONSTRAINT_TYPE
-	FROM information_schema.TABLE_CONSTRAINTS
-	WHERE CONSTRAINT_SCHEMA = 'inversiones'
-	ORDER BY TABLE_NAME, CONSTRAINT_TYPE, CONSTRAINT_NAME;
-\end{verbatim}
-
-\captura{mysql-tablas.png}{Tablas y restricciones del esquema en MySQL}{mysql-tablas}
-
 \subsection{Objetos programados}
 
 \paragraph{Procedimiento \nem{generar\us tabla\us interes}.} Aplica la misma regla que en PostgreSQL. Se define con \nem{SQL SECURITY DEFINER}, equivalente a \nem{SECURITY DEFINER}, y su \nem{DEFINER} es la cuenta del DBA que lo crea, de acuerdo con la sección~\ref{sec:admin-instancia}.
@@ -731,18 +668,6 @@ Las restricciones de cada tabla se consultan en el diccionario de datos del gest
 	DELIMITER ;
 \end{verbatim}
 
-\begin{verbatim}
-	SELECT ROUTINE_NAME, ROUTINE_TYPE, DEFINER, SECURITY_TYPE
-	FROM information_schema.ROUTINES
-	WHERE ROUTINE_SCHEMA = 'inversiones';
-	
-	SELECT TRIGGER_NAME, EVENT_MANIPULATION, EVENT_OBJECT_TABLE, DEFINER
-	FROM information_schema.TRIGGERS
-	WHERE TRIGGER_SCHEMA = 'inversiones';
-\end{verbatim}
-
-\captura{mysql-objetos.png}{Procedimientos y triggers en MySQL}{mysql-objetos}
-
 \subsection{Permisos}
 
 Los privilegios se otorgan a los roles, con la misma matriz que en PostgreSQL. Hay dos diferencias que simplifican la implementación:
@@ -792,18 +717,6 @@ Los privilegios del auditor se otorgan sobre la base de datos completa (\nem{inv
 	-- Auditor
 	GRANT SELECT ON inversiones.* TO rol_auditor;
 \end{verbatim}
-
-Los privilegios de cada rol se consultan con \nem{SHOW GRANTS} (figura~\ref{fig:mysql-permisos}):
-
-\begin{verbatim}
-	SHOW GRANTS FOR rol_gerente;
-	SHOW GRANTS FOR rol_ejecutivo;
-	SHOW GRANTS FOR rol_tesoreria;
-	SHOW GRANTS FOR rol_auditor;
-	SHOW GRANTS FOR rol_respaldo;
-\end{verbatim}
-
-\captura{mysql-permisos.png}{Privilegios de los roles en MySQL}{mysql-permisos}
 
 \section{Datos de prueba}
 
@@ -1259,184 +1172,3 @@ El interés moratorio se calcula de forma proporcional a los días de atraso, so
 	WHERE parcial AND NOT tardio;
 \end{verbatim}
 
-\subsection{Resultado de la carga}
-
-La consulta siguiente, igual en ambos gestores, cuenta los registros de cada tabla para compararlos con la tabla~\ref{tab:volumen-prueba}.
-
-\begin{verbatim}
-	SELECT 'empresa' AS tabla, COUNT(*) AS registros FROM empresa
-	UNION ALL SELECT 'sucursal',    COUNT(*) FROM sucursal
-	UNION ALL SELECT 'cliente',     COUNT(*) FROM cliente
-	UNION ALL SELECT 'aval',        COUNT(*) FROM aval
-	UNION ALL SELECT 'inversion',   COUNT(*) FROM inversion
-	UNION ALL SELECT 'interes',     COUNT(*) FROM interes
-	UNION ALL SELECT 'liquidacion', COUNT(*) FROM liquidacion
-	UNION ALL SELECT 'pago',        COUNT(*) FROM pago
-	UNION ALL SELECT 'bitacora',    COUNT(*) FROM bitacora;
-\end{verbatim}
-
-\captura[10cm]{pg-datos-conteo.png}{Registros cargados en PostgreSQL}{pg-datos-conteo}
-\captura[10cm]{mysql-datos-conteo.png}{Registros cargados en MySQL}{mysql-datos-conteo}
-
-\section{Pruebas de alcance}
-\label{sec:pruebas-alcance}
-Las pruebas se ejecutan después de crear los triggers de bitácora del capítulo~\ref{cap:bitacora}, para que las operaciones permitidas queden auditadas.
-
-Las pruebas de alcance comprueban que cada rol puede ejecutar las operaciones que le asigna la matriz de permisos de la sección~\ref{sec:roles-matriz} y que el gestor rechaza las demás. Cada usuario ejecuta al menos una operación permitida y una denegada. Las operaciones son las que realizaría el puesto en la operación diaria, de modo que las pruebas permitidas quedan como registros reales del sistema: un cliente, una inversión con su tabla de interés y un pago. Las sentencias son iguales en ambos gestores; solo cambian la conexión y el texto del error. La tabla~\ref{tab:pruebas-alcance} resume las pruebas.
-
-\begin{table}[H]
-	\centering
-	\small
-	\caption{Pruebas de alcance por rol}
-	\label{tab:pruebas-alcance}
-	\begin{tabular}{@{}L{3.2cm} L{8.2cm} L{4.6cm}@{}}
-		\toprule
-		\textbf{Usuario (rol)} & \textbf{Operación} & \textbf{Resultado	esperado} \\
-		\midrule
-		\nem{dmejia} \newline (\nem{rol\us gerente}) & Actualizar la dirección de una sucursal & Permitida \\
-		& Registrar un pago & Denegada: sin privilegio \\
-		& Eliminar una inversión con periodos de interés & Denegada: llave foránea (nota 1 de la matriz) \\
-		\midrule
-		\nem{pzuniga} \newline (\nem{rol\us ejecutivo}) & Registrar un cliente y una inversión, generar su tabla de interés y actualizar el teléfono del cliente & Permitida \\
-		& Modificar el RFC del cliente & Denegada: privilegio por columna \\
-		& Insertar un periodo de interés directamente & Denegada: sin privilegio \\
-		\midrule
-		\nem{xzaleta} \newline (\nem{rol\us tesoreria}) & Registrar el pago	tardío de un periodo vencido & Permitida \\
-		& Modificar el capital de una inversión & Denegada: sin privilegio \\
-		\midrule
-		\nem{enovoa} \newline (\nem{rol\us auditor}) & Consultar los pagos con interés moratorio & Permitida \\
-		& Eliminar registros de la bitácora & Denegada: sin privilegio \\
-		\midrule
-		\nem{respaldo} \newline (\nem{rol\us respaldo}) & Generar un respaldo lógico de la base de datos & Permitida \\
-		& Eliminar pagos & Denegada: sin privilegio \\
-		\bottomrule
-	\end{tabular}
-\end{table}
-
-\subsection{Sentencias de prueba}
-
-\paragraph{Gerente.} La eliminación de la inversión 40 es una operación que el gerente tiene permitida, pero el gestor la rechaza porque la inversión ya tiene periodos de interés.
-
-\begin{verbatim}
-	-- Permitida
-	UPDATE sucursal
-	SET sucursal_direccion = 'Av. Paseo Tabasco 1203, Villahermosa'
-	WHERE sucursal_num = 15;
-
-	-- Denegada: sin privilegio
-	INSERT INTO pago (inversion_num, interes_fecha_inicial, pago_fecha,
-	                  pago_interes)
-	VALUES (16, '2025-05-05', '2026-10-28', 4250.00);
-
-	-- Denegada: llave foránea
-	DELETE FROM inversion WHERE inversion_num = 40;
-\end{verbatim}
-
-\paragraph{Ejecutivo.} El ejecutivo registra una nueva clienta y su inversión, que recibe el número 41, y genera su tabla de interés de 12 periodos mediante el procedimiento.
-
-\begin{verbatim}
-	-- Permitidas
-	INSERT INTO cliente (cliente_rfc, cliente_nombre, cliente_apellido,
-	                     cliente_direccion, cliente_telefono)
-	VALUES ('OESM920314HT5', 'Mariana', 'Ortega Salinas',
-	        'Calle Enríquez 58, Xalapa', '2281234567');
-
-	INSERT INTO inversion (pagare_num, sucursal_num, cliente_num, aval_num,
-	                       inversion_capital, inversion_tasa,
-	                       inversion_tasa_moratoria, inversion_dia_pago,
-	                       pagare_fecha, pagare_jurisdiccion,
-	                       inversion_fecha_vencimiento)
-	VALUES ('0006/2026', 3, 26, NULL, 120000.00, 1.0000, 2.5000, 15,
-	        '2026-10-28', 'Xalapa', '2027-10-15');
-
-	CALL generar_tabla_interes(41);
-
-	UPDATE cliente SET cliente_telefono = '2287654321'
-	WHERE cliente_num = 26;
-
-	-- Denegada: privilegio por columna
-	UPDATE cliente SET cliente_rfc = 'OESM920314HT6'
-	WHERE cliente_num = 26;
-
-	-- Denegada: sin privilegio
-	INSERT INTO interes (inversion_num, interes_fecha_inicial,
-	                     interes_fecha_final, interes_monto)
-	VALUES (41, '2027-10-15', '2027-11-15', 1200.00);
-\end{verbatim}
-
-\paragraph{Tesorería.} La tesorería paga el periodo del 5 de mayo al 5 de junio de 2025 de la inversión 16, que estaba vencido. El interés moratorio corresponde a 510 días de atraso: $4{,}250.00 \times 2.5\mkern 3mu\% \times 510/30 = 1{,}806.25$.
-
-
-\begin{verbatim}
-	-- Permitida
-	INSERT INTO pago (inversion_num, interes_fecha_inicial, pago_fecha,
-	                  pago_interes, pago_mora)
-	VALUES (16, '2025-05-05', '2026-10-28', 4250.00, 1806.25);
-
-	-- Denegada: sin privilegio
-	UPDATE inversion SET inversion_capital = 600000.00
-	WHERE inversion_num = 16;
-\end{verbatim}
-
-\paragraph{Auditor.}
-
-\begin{verbatim}
-	-- Permitida
-	SELECT inversion_num, COUNT(*) AS pagos, SUM(pago_mora) AS mora
-	FROM pago
-	WHERE pago_mora > 0
-	GROUP BY inversion_num
-	ORDER BY inversion_num;
-
-	-- Denegada: sin privilegio
-	DELETE FROM bitacora;
-\end{verbatim}
-
-\paragraph{Respaldo.} La operación permitida es el respaldo lógico, que se ejecuta con la herramienta de cada gestor (ver las secciones siguientes). La operación denegada es:
-
-\begin{verbatim}
-	-- Denegada: sin privilegio
-	DELETE FROM pago WHERE inversion_num = 1;
-\end{verbatim}
-
-\subsection{PostgreSQL}
-
-Cada usuario se conecta con su propia cuenta y ejecuta sus sentencias:
-
-\begin{verbatim}
-	psql -h localhost -p 5432 -U dmejia -d inversiones
-	psql -h localhost -p 5432 -U pzuniga -d inversiones
-	psql -h localhost -p 5432 -U xzaleta -d inversiones
-	psql -h localhost -p 5432 -U enovoa -d inversiones
-	psql -h localhost -p 5432 -U respaldo -d inversiones
-	
-	pg_dump -h localhost -p 5432 -U respaldo -d inversiones -n inversiones -F c -f inversiones.dump
-\end{verbatim}
-
-Las operaciones permitidas responden con \nem{UPDATE 1}, \nem{INSERT 0 1}, \nem{CALL} o el resultado de la consulta. Las denegadas por falta de privilegio responden con \nem{ERROR: permission denied for table}, seguido del nombre de la tabla, incluso en la actualización del RFC, porque el ejecutivo no tiene privilegio sobre esa columna. La eliminación de la inversión responde con \nem{ERROR: update or delete on table "inversion" violates foreign key constraint \ldots{} on table "interes"}.
-
-\captura[12cm]{pg-alcance-gerente.png}{Pruebas de alcance del gerente en PostgreSQL}{pg-alcance-gerente}
-\captura[12cm]{pg-alcance-ejecutivo.png}{Pruebas de alcance del ejecutivo en PostgreSQL}{pg-alcance-ejecutivo}
-\captura[12cm]{pg-alcance-tesoreria.png}{Pruebas de alcance de tesorería en PostgreSQL}{pg-alcance-tesoreria}
-\captura[12cm]{pg-alcance-auditor.png}{Pruebas de alcance del auditor en PostgreSQL}{pg-alcance-auditor}
-\captura[12cm]{pg-alcance-respaldo.png}{Pruebas de alcance del respaldo en PostgreSQL}{pg-alcance-respaldo}
-
-\subsection{MySQL}
-
-\begin{verbatim}
-	mysql -h localhost -P 3306 -u dmejia -p inversiones
-	mysql -h localhost -P 3306 -u pzuniga -p inversiones
-	mysql -h localhost -P 3306 -u xzaleta -p inversiones
-	mysql -h localhost -P 3306 -u enovoa -p inversiones
-	mysql -h localhost -P 3306 -u respaldo -p inversiones
-	
-	mysqldump -h localhost -P 3306 -u respaldo -p --single-transaction --routines --triggers inversiones > inversiones.sql
-\end{verbatim}
-
-Las operaciones permitidas responden con \nem{Query OK}. Las denegadas por falta de privilegio sobre la tabla responden con el error 1142: \nem{INSERT command denied to user \ldots{} for table 'pago'}. La actualización del RFC responde con el error 1143, propio de los privilegios por columna: \nem{UPDATE command denied to user \ldots{} for column 'cliente\us rfc' in table 'cliente'}. La eliminación de la inversión responde con el error 1451: \nem{Cannot delete or update a parent row: a foreign key constraint fails}.
-
-\captura{mysql-alcance-gerente.png}{Pruebas de alcance del gerente en MySQL}{mysql-alcance-gerente}
-\captura{mysql-alcance-ejecutivo.png}{Pruebas de alcance del ejecutivo en MySQL}{mysql-alcance-ejecutivo}
-\captura{mysql-alcance-tesoreria.png}{Pruebas de alcance de tesorería en MySQL}{mysql-alcance-tesoreria}
-\captura{mysql-alcance-auditor.png}{Pruebas de alcance del auditor en MySQL}{mysql-alcance-auditor}
-\captura{mysql-alcance-respaldo.png}{Pruebas de alcance del respaldo en MySQL}{mysql-alcance-respaldo}

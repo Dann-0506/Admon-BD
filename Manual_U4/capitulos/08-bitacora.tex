@@ -1,6 +1,5 @@
 \chapter{Bitácora}
 \label{cap:bitacora}
-\recursoscapitulo{08-bitacora}
 
 La bitácora registra cada cambio efectivo en los datos del sistema: qué usuario lo hizo, cuándo, desde qué equipo, en qué tabla, con qué operación y cuáles eran los valores antes y después del cambio. Cubre las ocho tablas de datos del esquema; la propia \nem{bitacora} no se audita a sí misma. Su propósito es que el auditor pueda reconstruir la historia de cualquier registro, en particular de los montos de inversiones, pagos y liquidaciones, sin depender de la palabra de quien hizo el cambio.
 
@@ -147,19 +146,6 @@ La sentencia \nem{TRUNCATE} no activa los triggers por renglón, así que la bit
 	  BEFORE TRUNCATE ON bitacora
 	  FOR EACH STATEMENT EXECUTE FUNCTION fn_bitacora_proteger();
 \end{verbatim}
-
-La consulta siguiente lista los triggers del esquema. Es igual en ambos
-gestores.
-
-\begin{verbatim}
-	SELECT event_object_table, trigger_name, action_timing,
-	       event_manipulation
-	FROM information_schema.triggers
-	WHERE trigger_schema = 'inversiones'
-	ORDER BY event_object_table, trigger_name, event_manipulation;
-\end{verbatim}
-
-\captura[12cm]{pg-bitacora-triggers.png}{Triggers de bitácora en PostgreSQL}{pg-bitacora-triggers}
 
 \section{MySQL}
 
@@ -479,48 +465,3 @@ Hay dos diferencias con PostgreSQL. Primero, las acciones en cascada de las llav
 	  SET MESSAGE_TEXT = 'La bitácora no admite la operación DELETE';
 \end{verbatim}
 
-\captura{mysql-bitacora-triggers.png}{Triggers de bitácora en MySQL}{mysql-bitacora-triggers}
-
-\section{Registro de las pruebas de alcance}
-
-Las pruebas de alcance de la sección~\ref{sec:pruebas-alcance} se ejecutan después de crear la bitácora, de modo que sus operaciones permitidas quedan registradas con el usuario de cada prueba. Las operaciones denegadas no dejan registro. La tabla~\ref{tab:bitacora-pruebas} muestra los 17 registros esperados. La numeración puede tener huecos, porque una inserción revertida también consume un número de \nem{bitacora\us num}.
-
-\begin{table}[H]
-	\centering
-	\small
-	\caption{Registros de bitácora esperados tras las pruebas de alcance}
-	\label{tab:bitacora-pruebas}
-	\begin{tabular}{@{}l l l r L{6.2cm}@{}}
-		\toprule
-		\textbf{Usuario} & \textbf{Tabla} & \textbf{Operación} &
-		\textbf{Registros} & \textbf{Origen} \\
-		\midrule
-		\nem{dmejia} & \nem{sucursal} & \nem{UPDATE} & 1 & Dirección de la
-		sucursal 15 \\
-		\nem{pzuniga} & \nem{cliente} & \nem{INSERT} & 1 & Cliente 26 \\
-		\nem{pzuniga} & \nem{inversion} & \nem{INSERT} & 1 & Inversión 41 \\
-		\nem{pzuniga} & \nem{interes} & \nem{INSERT} & 12 & Periodos generados
-		por el procedimiento \\
-		\nem{pzuniga} & \nem{cliente} & \nem{UPDATE} & 1 & Teléfono del
-		cliente 26 \\
-		\nem{xzaleta} & \nem{pago} & \nem{INSERT} & 1 & Pago tardío de la
-		inversión 16 \\
-		\bottomrule
-	\end{tabular}
-\end{table}
-
-El auditor consulta los registros con:
-
-\begin{verbatim}
-	SELECT bitacora_num, bitacora_fecha, bitacora_usuario, bitacora_ip,
-	       bitacora_sesion, bitacora_tabla, bitacora_operacion
-	FROM bitacora
-	ORDER BY bitacora_num;
-
-	SELECT bitacora_dato_anterior, bitacora_dato_nuevo
-	FROM bitacora
-	WHERE bitacora_tabla = 'cliente' AND bitacora_operacion = 'UPDATE';
-\end{verbatim}
-
-\captura{pg-bitacora-registros.png}{Registros de bitácora en PostgreSQL}{pg-bitacora-registros}
-\captura{mysql-bitacora-registros.png}{Registros de bitácora en MySQL}{mysql-bitacora-registros}

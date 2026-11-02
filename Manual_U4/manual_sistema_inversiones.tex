@@ -1,4 +1,4 @@
-\documentclass[11pt,letterpaper]{report}
+ \documentclass[11pt,letterpaper]{report}
 
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
@@ -24,20 +24,16 @@
 \newcommand{\us}{\_\allowbreak{}}
 \newcommand{\bs}{\textbackslash\allowbreak{}}
 
-% Carpeta de imágenes del capítulo actual: cada capítulo la declara con
-% \recursoscapitulo{nombre} y sus imágenes se guardan en recursos/nombre/
-\newcommand{\dirrecursos}{recursos}
-\newcommand{\recursoscapitulo}[1]{\renewcommand{\dirrecursos}{recursos/#1}}
-
 % Captura o diagrama: \captura[ancho]{archivo}{título}{etiqueta}
 % El ancho es opcional (por defecto, el de la página).
+% Todas las imágenes se guardan en la carpeta recursos/
 \newcommand{\captura}[4][\textwidth]{%
 	\begin{figure}[H]
 		\centering
-		\IfFileExists{\dirrecursos/#2}%
-		{\includegraphics[width=#1]{\dirrecursos/#2}}%
+		\IfFileExists{recursos/#2}%
+		{\includegraphics[width=#1]{recursos/#2}}%
 		{\fbox{\parbox[c][4cm][c]{0.9\textwidth}{\centering\small
-					Imagen pendiente: \texttt{\dirrecursos/\detokenize{#2}}}}}
+					Imagen pendiente: \texttt{recursos/\detokenize{#2}}}}}
 		\caption{#3}
 		\label{fig:#4}
 	\end{figure}

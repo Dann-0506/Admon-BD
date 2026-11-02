@@ -1,6 +1,5 @@
 \chapter{Tablespaces}
 \label{cap:tablespaces}
-\recursoscapitulo{09-tablespaces}
 
 Un tablespace es una ubicación en disco donde el gestor guarda los datos de los objetos que se le asignan. En PostgreSQL, un tablespace es un directorio; en MySQL, un tablespace general es un archivo \nem{.ibd} que comparten varias tablas. Si no se indica otra cosa, PostgreSQL guarda todos los objetos en el tablespace \nem{pg\us default}, dentro del directorio de datos, y MySQL guarda cada tabla en su propio archivo, también dentro del directorio de datos.
 
@@ -62,7 +61,7 @@ Un tablespace es una ubicación en disco donde el gestor guarda los datos de los
 	\end{tabular}
 \end{table}
 
-\paragraph{Directorios.} Todos los tablespaces se ubican bajo \nem{C:\bs tablespaces}, con una carpeta por instancia y, dentro de ella, una subcarpeta por tablespace (tabla~\ref{tab:directorios-tablespaces}).
+\paragraph{Directorios.} Todos los tablespaces se ubican bajo \nem{C:\bs tablespaces}, con una carpeta por instancia y, dentro de ella, una subcarpeta por tablespace (tabla~\ref{tab:directorios-tablespaces} y figura~\ref{fig:tablespaces-archivos}).
 
 \begin{table}[H]
 	\centering
@@ -152,44 +151,6 @@ El DBA traslada cada tabla con \nem{ALTER TABLE \ldots{} SET TABLESPACE}. Esta s
 	ALTER INDEX pk_bitacora SET TABLESPACE ts_bitacora;
 \end{verbatim}
 
-\paragraph{Verificación.} La primera consulta muestra los tablespaces del sistema, su dueño, su ubicación y su tamaño (figura~\ref{fig:pg-tablespaces}):
-
-\begin{verbatim}
-	SELECT spcname AS tablespace,
-	       pg_get_userbyid(spcowner) AS dueno,
-	       pg_tablespace_location(oid) AS ubicacion,
-	       pg_size_pretty(pg_tablespace_size(oid)) AS tamano
-	FROM pg_tablespace
-	WHERE spcname LIKE 'ts\_%'
-	ORDER BY spcname;
-\end{verbatim}
-
-\captura{pg-tablespaces.png}{Tablespaces de PostgreSQL}{pg-tablespaces}
-
-La segunda muestra el tablespace de cada tabla e índice del esquema (figura~\ref{fig:pg-tablespaces-objetos}). Los objetos que permanecen en la ubicación por defecto aparecerían como \nem{pg\us default}, por lo que la consulta confirma que no quedó ninguno sin trasladar.
-
-\begin{verbatim}
-	SELECT COALESCE(t.spcname, 'pg_default') AS tablespace,
-	       CASE c.relkind WHEN 'r' THEN 'tabla' ELSE 'indice' END AS tipo,
-	       c.relname AS objeto,
-	       pg_size_pretty(pg_table_size(c.oid)) AS tamano
-	FROM pg_class c
-	  LEFT JOIN pg_tablespace t ON t.oid = c.reltablespace
-	WHERE c.relnamespace = 'inversiones'::regnamespace
-	  AND c.relkind IN ('r', 'i')
-	ORDER BY 1, c.relkind DESC, c.relname;
-\end{verbatim}
-
-\captura{pg-tablespaces-objetos.png}{Tablas e índices por tablespace en PostgreSQL}{pg-tablespaces-objetos}
-
-Por último, el contenido de los directorios muestra los archivos que el gestor creó en cada tablespace (figura~\ref{fig:pg-tablespaces-archivos}):
-
-\begin{verbatim}
-	dir /s C:\tablespaces\pg1
-\end{verbatim}
-
-\captura{pg-tablespaces-archivos.png}{Archivos de los tablespaces de PostgreSQL}{pg-tablespaces-archivos}
-
 \section{MySQL}
 
 \subsection{Directorios}
@@ -245,34 +206,6 @@ El DBA traslada cada tabla con \nem{ALTER TABLE \ldots{} TABLESPACE}. Los índic
 	ALTER TABLE bitacora TABLESPACE ts_bitacora;
 \end{verbatim}
 
-\paragraph{Verificación.} Las tablas de \nem{information\us schema} que describen los tablespaces de InnoDB requieren el privilegio \nem{PROCESS}, que el DBA no tiene, por lo que las consultas las ejecuta el superusuario. La primera muestra los tablespaces, su archivo y su tamaño (figura~\ref{fig:mysql-tablespaces}):
+La figura~\ref{fig:tablespaces-archivos} muestra el contenido de \nem{C:\bs tablespaces} con las tablas ya asignadas en las cuatro instancias, incluidas las particiones de la segunda instancia de PostgreSQL.
 
-\begin{verbatim}
-	SELECT s.NAME AS tablespace, d.PATH AS archivo,
-	       ROUND(s.FILE_SIZE / 1024) AS tamano_kb
-	FROM information_schema.INNODB_TABLESPACES s
-	  JOIN information_schema.INNODB_DATAFILES d ON d.SPACE = s.SPACE
-	WHERE s.NAME LIKE 'ts\_%'
-	ORDER BY s.NAME;
-\end{verbatim}
-
-\captura{mysql-tablespaces.png}{Tablespaces de MySQL}{mysql-tablespaces}
-
-La segunda muestra el tablespace de cada tabla del esquema (figura~\ref{fig:mysql-tablespaces-objetos}). Una tabla que permaneciera en su archivo individual aparecería con un tablespace de nombre \nem{inversiones/}\textit{tabla}.
-
-\begin{verbatim}
-	SELECT s.NAME AS tablespace,
-	       SUBSTRING_INDEX(t.NAME, '/', -1) AS tabla
-	FROM information_schema.INNODB_TABLES t
-	  JOIN information_schema.INNODB_TABLESPACES s ON s.SPACE = t.SPACE
-	WHERE t.NAME LIKE 'inversiones/%'
-	ORDER BY s.NAME, tabla;
-\end{verbatim}
-
-\captura{mysql-tablespaces-objetos.png}{Tablas por tablespace en MySQL}{mysql-tablespaces-objetos}
-
-\begin{verbatim}
-	dir /s C:\tablespaces\mysql1
-\end{verbatim}
-
-\captura{mysql-tablespaces-archivos.png}{Archivos de los tablespaces de MySQL}{mysql-tablespaces-archivos}
+\captura{tablespaces-archivos.png}{Directorios de los tablespaces de todas las instancias}{tablespaces-archivos}

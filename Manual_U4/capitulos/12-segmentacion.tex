@@ -1,6 +1,5 @@
 \chapter{Segmentaci\'on}
 \label{cap:segmentacion}
-\recursoscapitulo{12-segmentacion}
 
 La segmentación divide una tabla en fragmentos lógicos mediante vistas. A diferencia del particionamiento, la tabla no se modifica físicamente: sus datos permanecen en un solo lugar y cada fragmento es una vista que selecciona una parte de sus filas o de sus columnas. Los usuarios consultan el fragmento que necesitan como si fuera una tabla, y el gestor obtiene sus datos de la tabla original en cada consulta.
 
@@ -25,7 +24,7 @@ Como se indicó en la configuración del entorno, la segmentación se implementa
 	\end{tabular}
 \end{table}
 
-\paragraph{Reglas de corrección.} Una fragmentación es correcta si cumple tres reglas, que se comprueban con consultas en cada gestor:
+\paragraph{Reglas de corrección.} Una fragmentación es correcta si cumple tres reglas, que el diseño de los fragmentos de este esquema garantiza:
 
 \begin{itemize}[leftmargin=*]
 	\item \textbf{Completitud:} todo dato de la tabla aparece en algún fragmento. En la fragmentación horizontal, toda fila pertenece a un fragmento; en la vertical, toda columna.
@@ -57,7 +56,7 @@ Las condiciones son excluyentes y cubren todos los casos: una inversión tiene o
 
 \paragraph{Por qué vistas y no particiones.} El estado de una inversión no se almacena en ninguna columna: depende de la fecha actual y de la existencia de un registro en otra tabla, \nem{liquidacion}. Una inversión vigente pasa a estar vencida el día siguiente a su vencimiento sin que nadie modifique un solo registro. Por ello, el estado no puede servir como clave de partición: el gestor ubica cada fila en una partición según el valor almacenado en una columna de la propia tabla, y lo hace al insertarla o modificarla. Agregar una columna de estado obligaría a actualizarla diariamente con un proceso externo y repetiría información que ya se deduce de los datos. Una vista, en cambio, evalúa la condición en cada consulta, por lo que su contenido siempre corresponde al estado actual.
 
-\paragraph{Contenido variable.} Como consecuencia, el contenido de las vistas cambia con el paso del tiempo. Con los datos de la primera instancia después de las pruebas de alcance, las 41 inversiones se reparten en 16 vigentes, 10 vencidas y 15 liquidadas. Mientras no se registren nuevas liquidaciones, estos conteos se mantienen hasta el 19 de enero de 2027, fecha de vencimiento de la inversión 30; al día siguiente, esa inversión pasa al fragmento de vencidas. Las reglas de corrección, en cambio, se cumplen en cualquier fecha.
+\paragraph{Contenido variable.} Como consecuencia, el contenido de las vistas cambia con el paso del tiempo. Con los datos de prueba, las 40 inversiones se reparten en 15 vigentes, 10 vencidas y 15 liquidadas. Mientras no se registren nuevas liquidaciones, estos conteos se mantienen hasta el 19 de enero de 2027, fecha de vencimiento de la inversión 30; al día siguiente, esa inversión pasa al fragmento de vencidas. Las reglas de corrección, en cambio, se cumplen en cualquier fecha.
 
 \subsection{Fragmentación vertical de \nem{bitacora}}
 
@@ -78,7 +77,7 @@ Las columnas de \nem{bitacora} se usan de dos formas distintas. Las que identifi
 	\end{tabular}
 \end{table}
 
-Ambos fragmentos conservan la llave primaria, (\nem{bitacora\us num}, \nem{bitacora\us fecha}), que permite reunirlos para reconstruir cada registro. El auditor localiza primero los eventos en \nem{bitacora\us resumen} y después consulta el detalle de los que le interesan.
+Ambos fragmentos conservan la llave primaria, (\nem{bitacora\us num}, \nem{bitacora\us fecha}), que permite reunirlos para reconstruir cada registro. Cada una de las demás columnas aparece en un solo fragmento, por lo que la fragmentación vertical también es completa y disjunta por construcción. El auditor localiza primero los eventos en \nem{bitacora\us resumen} y después consulta el detalle de los que le interesan.
 
 \paragraph{Por qué vistas y no tablas separadas.} Dividir la bitácora en dos tablas físicas obligaría a cada trigger a escribir en ambas, y en MySQL no podría haber una llave foránea entre ellas, porque las tablas particionadas no admiten llaves foráneas. Con vistas, los triggers siguen escribiendo un solo registro en una sola tabla, y la fragmentación no modifica la forma de auditar descrita en el capítulo~\ref{cap:bitacora}. Las vistas tampoco dependen de que la tabla esté particionada: el gestor resuelve las particiones al consultarlas.
 
@@ -149,79 +148,6 @@ El DBA crea las vistas en la segunda instancia, con el rol \nem{rol\us admin\us 
 	  TO rol_gerente, rol_ejecutivo, rol_tesoreria;
 \end{verbatim}
 
-\paragraph{Verificación.} Las consultas de verificación son iguales en ambos gestores. La primera lista las vistas del esquema (figura~\ref{fig:pg-segmentacion-vistas}):
-
-\begin{verbatim}
-	SELECT table_name AS vista
-	FROM information_schema.views
-	WHERE table_schema = 'inversiones'
-	ORDER BY table_name;
-\end{verbatim}
-
-\captura{pg-segmentacion-vistas.png}{Vistas de segmentación en PostgreSQL}{pg-segmentacion-vistas}
-
-La fragmentación horizontal se comprueba con dos consultas (figura~\ref{fig:pg-segmentacion-horizontal}). La primera cuenta las inversiones de cada fragmento. La segunda compara la tabla con la unión de los fragmentos: \nem{sin\us fragmento} cuenta las inversiones que no aparecen en ningún fragmento (completitud) y \nem{repetidas} las que aparecen en más de uno (disyunción). Si ambas son cero y la unión tiene tantas filas como la tabla, la unión de los fragmentos reconstruye la tabla.
-
-\begin{verbatim}
-	SELECT 'inversion_vigente' AS fragmento, COUNT(*) AS inversiones
-	FROM inversion_vigente
-	UNION ALL
-	SELECT 'inversion_vencida', COUNT(*) FROM inversion_vencida
-	UNION ALL
-	SELECT 'inversion_liquidada', COUNT(*) FROM inversion_liquidada;
-
-	WITH fragmentos AS (
-	  SELECT inversion_num FROM inversion_vigente
-	  UNION ALL
-	  SELECT inversion_num FROM inversion_vencida
-	  UNION ALL
-	  SELECT inversion_num FROM inversion_liquidada
-	),
-	apariciones AS (
-	  SELECT i.inversion_num, COUNT(f.inversion_num) AS veces
-	  FROM inversion i
-	    LEFT JOIN fragmentos f ON f.inversion_num = i.inversion_num
-	  GROUP BY i.inversion_num
-	)
-	SELECT (SELECT COUNT(*) FROM inversion) AS en_tabla,
-	       (SELECT COUNT(*) FROM fragmentos) AS en_fragmentos,
-	       (SELECT COUNT(*) FROM apariciones WHERE veces = 0) AS sin_fragmento,
-	       (SELECT COUNT(*) FROM apariciones WHERE veces > 1) AS repetidas;
-\end{verbatim}
-
-\captura{pg-segmentacion-horizontal.png}{Verificación de la fragmentación horizontal en PostgreSQL}{pg-segmentacion-horizontal}
-
-La fragmentación vertical se comprueba sobre el catálogo (figura~\ref{fig:pg-segmentacion-vertical}). La primera consulta indica en qué vista aparece cada columna de \nem{bitacora}: toda columna debe aparecer al menos una vez (completitud) y solo las de la llave primaria en ambas (disyunción). La segunda reúne ambas vistas por la llave primaria y compara el número de registros reconstruidos con el de la tabla (reconstrucción).
-
-\begin{verbatim}
-	SELECT c.column_name AS columna,
-	       CASE WHEN r.column_name IS NULL THEN '' ELSE 'X' END AS resumen,
-	       CASE WHEN d.column_name IS NULL THEN '' ELSE 'X' END AS detalle
-	FROM information_schema.columns c
-	  LEFT JOIN information_schema.columns r
-	    ON r.table_schema = c.table_schema
-	   AND r.table_name = 'bitacora_resumen'
-	   AND r.column_name = c.column_name
-	  LEFT JOIN information_schema.columns d
-	    ON d.table_schema = c.table_schema
-	   AND d.table_name = 'bitacora_detalle'
-	   AND d.column_name = c.column_name
-	WHERE c.table_schema = 'inversiones'
-	  AND c.table_name = 'bitacora'
-	ORDER BY c.ordinal_position;
-
-	SELECT (SELECT COUNT(*) FROM bitacora) AS en_tabla,
-	       (SELECT COUNT(*)
-	        FROM bitacora_resumen r
-	          JOIN bitacora_detalle d
-	            ON d.bitacora_num = r.bitacora_num
-	           AND d.bitacora_fecha = r.bitacora_fecha) AS reconstruidos;
-\end{verbatim}
-
-\captura{pg-segmentacion-vertical.png}{Verificación de la fragmentación vertical en PostgreSQL}{pg-segmentacion-vertical}
-
-Con los datos de la primera instancia después de las pruebas de alcance, los fragmentos horizontales contienen 16, 10 y 15 inversiones; la unión tiene 41 filas, igual que la tabla, sin inversiones faltantes ni repetidas. En la fragmentación vertical, las diez columnas aparecen en alguna vista, solo las dos de la llave primaria se repiten, y los 17 registros de la bitácora se reconstruyen completos.
-
 \section{MySQL}
 
 Las vistas tienen la misma definición que en PostgreSQL. Se crean con \nem{DEFINER = CURRENT\us USER} y \nem{SQL SECURITY DEFINER}, de modo que se ejecutan con los privilegios de la cuenta del DBA, igual que los procedimientos y triggers del esquema. Como MySQL solo permite otorgar privilegios sobre un objeto por sentencia, cada fragmento de \nem{inversion} requiere su propio \nem{GRANT}.
@@ -270,8 +196,3 @@ Las vistas tienen la misma definición que en PostgreSQL. Se crean con \nem{DEFI
 	  TO rol_gerente, rol_ejecutivo, rol_tesoreria;
 \end{verbatim}
 
-\paragraph{Verificación.} Se ejecutan las mismas consultas de la sección anterior, que devuelven los mismos resultados (figuras~\ref{fig:mysql-segmentacion-vistas} a~\ref{fig:mysql-segmentacion-vertical}).
-
-\captura{mysql-segmentacion-vistas.png}{Vistas de segmentación en MySQL}{mysql-segmentacion-vistas}
-\captura{mysql-segmentacion-horizontal.png}{Verificación de la fragmentación horizontal en MySQL}{mysql-segmentacion-horizontal}
-\captura{mysql-segmentacion-vertical.png}{Verificación de la fragmentación vertical en MySQL}{mysql-segmentacion-vertical}

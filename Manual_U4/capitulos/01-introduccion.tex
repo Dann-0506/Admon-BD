@@ -1,5 +1,4 @@
 \chapter{Introducci\'on}
-\recursoscapitulo{01-introduccion}
 
 \section{Descripci\'on del sistema}
 
@@ -34,7 +33,7 @@ Generar un esquema que permita tener un control adecuado de un sistema de invers
 \section{Consultas de los objetivos espec\'ificos}
 \label{sec:consultas-objetivos}
 
-Cada objetivo espec\'ifico se resuelve con una consulta que puede ejecutar cualquier rol de operaci\'on (gerente, ejecutivo, tesorer\'ia o auditor), ya que solo requiere el privilegio \nem{SELECT} sobre las tablas del negocio. Las capturas se toman con el usuario \nem{dmejia} despu\'es de las pruebas de alcance (secci\'on~\ref{sec:pruebas-alcance}), por lo que los resultados incluyen los registros creados en ellas.
+Cada objetivo espec\'ifico se resuelve con una consulta que puede ejecutar cualquier rol de operaci\'on (gerente, ejecutivo, tesorer\'ia o auditor), ya que solo requiere el privilegio \nem{SELECT} sobre las tablas del negocio. Cada objetivo se acompaña de una captura que muestra el formato de la respuesta, igual en ambos gestores, obtenida con el usuario \nem{dmejia} sobre los datos de prueba.
 
 \paragraph{Par\'ametros.} Cada consulta inicia con una expresi\'on de tabla com\'un llamada \nem{parametros}, que re\'une los valores de entrada: el periodo, el nombre buscado, el cliente o el pagar\'e. Para hacer otra consulta solo se modifica esa parte. El resto de la consulta no cambia, y casi siempre es igual en ambos gestores.
 
@@ -108,8 +107,7 @@ La consulta lista a los inversionistas que suscribieron al menos un pagar\'e en 
 
 Con los par\'ametros del ejemplo, el a\~no 2025 y la b\'usqueda \nem{jose}, ambas consultas devuelven un rengl\'on: el cliente 1, con una inversi\'on de \$75{,}000.00. Con una b\'usqueda vac\'ia, devuelven a las 17 personas que suscribieron pagar\'es en 2025.
 
-\captura{pg-objetivo1.png}{Consulta del objetivo 1 en PostgreSQL}{pg-objetivo1}
-\captura{mysql-objetivo1.png}{Consulta del objetivo 1 en MySQL}{mysql-objetivo1}
+\captura{objetivo1.png}{Formato de la respuesta del objetivo 1}{objetivo1}
 
 \subsection{Objetivo 2}
 
@@ -221,10 +219,9 @@ La expresi\'on \nem{saldo} calcula primero el saldo de cada periodo, y la consul
 	ORDER BY i.inversion_fecha_vencimiento;
 \end{verbatim}
 
-Con el periodo del ejemplo, el a\~no 2025, ambas consultas devuelven las inversiones 16, 18, 20 y 17, en ese orden de vencimiento. La inversi\'on 16 tiene un solo periodo sin pagar, porque la tesorer\'ia pag\'o el otro durante las pruebas de alcance. Su mora estimada es de \$201{,}700.00: $500{,}000 \times 2.5\mkern 3mu\% \times 480/30 = 200{,}000$ por el capital, m\'as $4{,}250 \times 2.5\mkern 3mu\% \times 480/30 = 1{,}700$ por el periodo pendiente.
+Con el periodo del ejemplo, el a\~no 2025, ambas consultas devuelven las inversiones 16, 18, 20 y 17, en ese orden de vencimiento. La inversi\'on 16 tiene dos periodos sin pagar. Su mora estimada es de \$203{,}506.25: $500{,}000 \times 2.5\mkern 3mu\% \times 480/30 = 200{,}000$ por el capital, m\'as $4{,}250 \times 2.5\mkern 3mu\% \times 510/30 = 1{,}806.25$ y $4{,}250 \times 2.5\mkern 3mu\% \times 480/30 = 1{,}700$ por los periodos pendientes.
 
-\captura{pg-objetivo2.png}{Consulta del objetivo 2 en PostgreSQL}{pg-objetivo2}
-\captura{mysql-objetivo2.png}{Consulta del objetivo 2 en MySQL}{mysql-objetivo2}
+\captura{objetivo2.png}{Formato de la respuesta del objetivo 2}{objetivo2}
 
 \subsection{Objetivo 3}
 
@@ -295,8 +292,7 @@ Los intereses exigibles y los pagos se suman en dos expresiones separadas, \nem{
 
 El ejemplo corresponde a la clienta Patricia Mendoza Aguilar, que tiene dos inversiones. La inversi\'on 10 est\'a liquidada: se devolvi\'o con 20 d\'ias de atraso, con un inter\'es moratorio de $75{,}000 \times 2.5\mkern 3mu\% \times 20/30 = 1{,}250.00$. La inversi\'on 35 est\'a vigente y al corriente; su mora pagada de \$7.50 proviene del pago parcial del periodo de junio de 2026.
 
-\captura{pg-objetivo3.png}{Consulta del objetivo 3 en PostgreSQL}{pg-objetivo3}
-\captura{mysql-objetivo3.png}{Consulta del objetivo 3 en MySQL}{mysql-objetivo3}
+\captura{objetivo3.png}{Formato de la respuesta del objetivo 3}{objetivo3}
 
 \subsection{Objetivo 4}
 
@@ -403,8 +399,7 @@ La segunda consulta, igual en ambos gestores, muestra los periodos de inter\'es 
 
 El ejemplo corresponde al pagar\'e \nem{0018/2024} (inversi\'on 21), que no tiene aval y est\'a vencido. Entre junio de 2025 y marzo de 2026 tiene diez periodos. El primero, que vence el 22 de junio de 2025, se pag\'o en dos partes y aparece como pagado con atraso. Los siete siguientes est\'an pagados, y los dos \'ultimos, vencidos sin pago.
 
-\captura{pg-objetivo4.png}{Consultas del objetivo 4 en PostgreSQL}{pg-objetivo4}
-\captura{mysql-objetivo4.png}{Consultas del objetivo 4 en MySQL}{mysql-objetivo4}
+\captura{objetivo4.png}{Formato de las respuestas del objetivo 4}{objetivo4}
 
 \subsection{Objetivo 5}
 
@@ -440,7 +435,6 @@ La consulta lista los pagar\'es suscritos en el periodo, con la sucursal, el cli
 	ORDER BY i.pagare_fecha;
 \end{verbatim}
 
-Del 1 de enero al 28 de octubre de 2026 se suscribieron seis pagar\'es. El \'ultimo, la inversi\'on 41, es el que registr\'o el ejecutivo durante las pruebas de alcance.
+Del 1 de enero al 28 de octubre de 2026 se suscribieron cinco pagar\'es, las inversiones 36 a 40.
 
-\captura{pg-objetivo5.png}{Consulta del objetivo 5 en PostgreSQL}{pg-objetivo5}
-\captura{mysql-objetivo5.png}{Consulta del objetivo 5 en MySQL}{mysql-objetivo5}
+\captura{objetivo5.png}{Formato de la respuesta del objetivo 5}{objetivo5}
