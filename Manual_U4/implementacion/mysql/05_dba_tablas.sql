@@ -1,0 +1,143 @@
+-- ==========================================================================
+-- MySQL · Tablas
+-- Ejecuta:  dlandero
+-- Conexión: base inversiones
+-- Origen:   Implementación física > MySQL > Tablas
+-- ==========================================================================
+
+SET NAMES utf8mb4;
+USE inversiones;
+
+CREATE TABLE empresa (
+  empresa_rfc        VARCHAR(13)  NOT NULL,
+  empresa_nombre     VARCHAR(100) NOT NULL,
+  empresa_direccion  VARCHAR(150) NOT NULL,
+  CONSTRAINT pk_empresa PRIMARY KEY (empresa_rfc)
+) ENGINE = InnoDB;
+
+CREATE TABLE sucursal (
+  sucursal_num        INT          NOT NULL AUTO_INCREMENT,
+  empresa_rfc         VARCHAR(13)  NOT NULL,
+  sucursal_nombre     VARCHAR(60)  NOT NULL,
+  sucursal_ciudad     VARCHAR(100) NOT NULL,
+  sucursal_direccion  VARCHAR(150) NOT NULL,
+  CONSTRAINT pk_sucursal PRIMARY KEY (sucursal_num),
+  CONSTRAINT fk_sucursal_empresa FOREIGN KEY (empresa_rfc)
+    REFERENCES empresa (empresa_rfc)
+    ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE = InnoDB;
+
+CREATE TABLE cliente (
+  cliente_num        INT          NOT NULL AUTO_INCREMENT,
+  cliente_rfc        CHAR(13)     NOT NULL,
+  cliente_nombre     VARCHAR(60)  NOT NULL,
+  cliente_apellido   VARCHAR(80)  NOT NULL,
+  cliente_direccion  VARCHAR(150) NOT NULL,
+  cliente_telefono   VARCHAR(15)  NOT NULL,
+  CONSTRAINT pk_cliente PRIMARY KEY (cliente_num),
+  CONSTRAINT ak_cliente_rfc UNIQUE (cliente_rfc)
+) ENGINE = InnoDB;
+
+CREATE TABLE aval (
+  aval_num        INT          NOT NULL AUTO_INCREMENT,
+  aval_rfc        CHAR(13)     NOT NULL,
+  aval_nombre     VARCHAR(60)  NOT NULL,
+  aval_apellido   VARCHAR(80)  NOT NULL,
+  aval_direccion  VARCHAR(150) NOT NULL,
+  CONSTRAINT pk_aval PRIMARY KEY (aval_num),
+  CONSTRAINT ak_aval_rfc UNIQUE (aval_rfc)
+) ENGINE = InnoDB;
+
+CREATE TABLE inversion (
+  inversion_num                INT           NOT NULL AUTO_INCREMENT,
+  pagare_num                   VARCHAR(30)   NOT NULL,
+  sucursal_num                 INT           NOT NULL,
+  cliente_num                  INT           NOT NULL,
+  aval_num                     INT           NULL,
+  inversion_capital            DECIMAL(14,2) NOT NULL,
+  inversion_tasa               DECIMAL(6,4)  NOT NULL,
+  inversion_tasa_moratoria     DECIMAL(6,4)  NOT NULL,
+  inversion_dia_pago           SMALLINT      NOT NULL,
+  pagare_fecha                 DATE          NOT NULL,
+  inversion_moneda             CHAR(3)       NOT NULL DEFAULT 'MXN',
+  pagare_jurisdiccion          VARCHAR(100)  NOT NULL,
+  inversion_fecha_vencimiento  DATE          NOT NULL,
+  CONSTRAINT pk_inversion PRIMARY KEY (inversion_num),
+  CONSTRAINT ak_inversion_pagare UNIQUE (pagare_num),
+  CONSTRAINT fk_inversion_sucursal FOREIGN KEY (sucursal_num)
+    REFERENCES sucursal (sucursal_num)
+    ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_inversion_cliente FOREIGN KEY (cliente_num)
+    REFERENCES cliente (cliente_num)
+    ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_inversion_aval FOREIGN KEY (aval_num)
+    REFERENCES aval (aval_num)
+    ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT ck_inversion_capital CHECK (inversion_capital > 0),
+  CONSTRAINT ck_inversion_tasa CHECK (inversion_tasa >= 0),
+  CONSTRAINT ck_inversion_tasa_moratoria
+    CHECK (inversion_tasa_moratoria >= 0),
+  CONSTRAINT ck_inversion_dia_pago
+    CHECK (inversion_dia_pago BETWEEN 1 AND 28),
+  CONSTRAINT ck_inversion_vencimiento
+    CHECK (inversion_fecha_vencimiento > pagare_fecha),
+  CONSTRAINT ck_inversion_vencimiento_dia
+    CHECK (DAY(inversion_fecha_vencimiento) = inversion_dia_pago)
+) ENGINE = InnoDB;
+
+CREATE TABLE interes (
+  inversion_num          INT           NOT NULL,
+  interes_fecha_inicial  DATE          NOT NULL,
+  interes_fecha_final    DATE          NOT NULL,
+  interes_monto          DECIMAL(14,2) NOT NULL,
+  CONSTRAINT pk_interes PRIMARY KEY (inversion_num, interes_fecha_inicial),
+  CONSTRAINT fk_interes_inversion FOREIGN KEY (inversion_num)
+    REFERENCES inversion (inversion_num)
+    ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT ck_interes_fechas
+    CHECK (interes_fecha_final > interes_fecha_inicial),
+  CONSTRAINT ck_interes_monto CHECK (interes_monto >= 0)
+) ENGINE = InnoDB;
+
+CREATE TABLE pago (
+  inversion_num          INT           NOT NULL,
+  interes_fecha_inicial  DATE          NOT NULL,
+  pago_fecha             DATE          NOT NULL,
+  pago_interes           DECIMAL(14,2) NOT NULL,
+  pago_mora              DECIMAL(14,2) NOT NULL DEFAULT 0,
+  CONSTRAINT pk_pago
+    PRIMARY KEY (inversion_num, interes_fecha_inicial, pago_fecha),
+  CONSTRAINT fk_pago_interes FOREIGN KEY (inversion_num, interes_fecha_inicial)
+    REFERENCES interes (inversion_num, interes_fecha_inicial)
+    ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT ck_pago_montos CHECK (pago_interes >= 0 AND pago_mora >= 0)
+) ENGINE = InnoDB;
+
+CREATE TABLE liquidacion (
+  inversion_num        INT           NOT NULL,
+  liquidacion_fecha    DATE          NOT NULL,
+  liquidacion_capital  DECIMAL(14,2) NOT NULL,
+  liquidacion_mora     DECIMAL(14,2) NOT NULL DEFAULT 0,
+  CONSTRAINT pk_liquidacion PRIMARY KEY (inversion_num),
+  CONSTRAINT fk_liquidacion_inversion FOREIGN KEY (inversion_num)
+    REFERENCES inversion (inversion_num)
+    ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT ck_liquidacion_capital CHECK (liquidacion_capital > 0),
+  CONSTRAINT ck_liquidacion_mora CHECK (liquidacion_mora >= 0)
+) ENGINE = InnoDB;
+
+CREATE TABLE bitacora (
+  bitacora_num            BIGINT       NOT NULL AUTO_INCREMENT,
+  bitacora_fecha          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  bitacora_usuario        VARCHAR(100) NOT NULL,
+  bitacora_tabla          VARCHAR(63)  NOT NULL,
+  bitacora_operacion      VARCHAR(6)   NOT NULL,
+  bitacora_ip             VARCHAR(45)  NULL,
+  bitacora_sesion         BIGINT       NULL,
+  bitacora_query          TEXT         NULL,
+  bitacora_dato_anterior  JSON         NULL,
+  bitacora_dato_nuevo     JSON         NULL,
+  CONSTRAINT pk_bitacora PRIMARY KEY (bitacora_num, bitacora_fecha),
+  CONSTRAINT ck_bitacora_operacion
+    CHECK (bitacora_operacion IN ('INSERT', 'UPDATE', 'DELETE'))
+) ENGINE = InnoDB;
