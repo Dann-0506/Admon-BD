@@ -3,7 +3,7 @@
 
 La segmentación divide una tabla en fragmentos lógicos mediante vistas. A diferencia del particionamiento, la tabla no se modifica físicamente: sus datos permanecen en un solo lugar y cada fragmento es una vista que selecciona una parte de sus filas o de sus columnas. Los usuarios consultan el fragmento que necesitan como si fuera una tabla, y el gestor obtiene sus datos de la tabla original en cada consulta.
 
-Como se indicó en la configuración del entorno, la segmentación se implementa en la segunda instancia de cada gestor, junto con el particionamiento.
+Como se indicó en el capítulo~\ref{cap:multiinstancias}, la segmentación se implementa en la segunda instancia de cada gestor, junto con el particionamiento.
 
 \section{Dise\~no de la segmentaci\'on}
 
@@ -83,19 +83,19 @@ Ambos fragmentos conservan la llave primaria, (\nem{bitacora\us num}, \nem{bitac
 
 \subsection{Uso y privilegios de las vistas}
 
-Las vistas son de solo lectura para los usuarios del sistema: las altas y los cambios se siguen haciendo sobre las tablas, con los privilegios del capítulo de implementación física. Cada vista se ejecuta con los privilegios de su dueño, el DBA, por lo que otorgar el privilegio \nem{SELECT} sobre una vista da acceso a sus datos aunque el usuario no tenga acceso a la tabla. Por ello, los privilegios sobre las vistas siguen la misma matriz que los de las tablas:
+Las vistas son de solo lectura para los usuarios del sistema: las altas y los cambios se siguen haciendo sobre las tablas, con los privilegios del capítulo~\ref{cap:implementacion}. Cada vista se ejecuta con los privilegios de su dueño, el DBA, por lo que otorgar el privilegio \nem{SELECT} sobre una vista da acceso a sus datos aunque el usuario no tenga acceso a la tabla. Por ello, los privilegios sobre las vistas siguen la misma matriz que los de las tablas:
 
 \begin{itemize}[leftmargin=*]
 	\item Los fragmentos de \nem{inversion} se otorgan al gerente, al ejecutivo y a la tesorería, que ya pueden consultar la tabla completa.
 	\item Los fragmentos de \nem{bitacora} no se otorgan a ningún rol de operación, ya que solo el auditor puede consultar la bitácora.
-	\item El auditor y el usuario de respaldo los reciben sin otorgamientos adicionales: en PostgreSQL, por los privilegios por defecto definidos en la implementación física; en MySQL, porque sus privilegios abarcan toda la base de datos (\nem{inversiones.*}).
+	\item El auditor y el usuario de respaldo los reciben sin otorgamientos adicionales: en PostgreSQL, por los privilegios por defecto definidos en el capítulo~\ref{cap:implementacion}; en MySQL, porque sus privilegios abarcan toda la base de datos (\nem{inversiones.*}).
 \end{itemize}
 
 Las vistas se definen con \nem{SELECT i.*} en los fragmentos horizontales, ya que estos conservan todas las columnas. Ambos gestores expanden el asterisco al crear la vista, por lo que, si en el futuro se agrega una columna a \nem{inversion}, las vistas deben volver a crearse para incluirla.
 
 \section{Diagrama relacional con segmentaci\'on}
 
-Las figuras~\ref{fig:segmentacion-horizontal} y~\ref{fig:segmentacion-vertical} muestran las vistas que se derivan de cada tabla. Las tablas se dibujan con borde continuo y encabezado oscuro, y las vistas con borde punteado y encabezado claro. Las flechas continuas indican de qué tabla obtiene sus datos cada vista; las punteadas, la tabla que se consulta para evaluar su condición. Las demás tablas y relaciones del esquema no cambian respecto al diagrama relacional.
+Las figuras~\ref{fig:segmentacion-horizontal} y~\ref{fig:segmentacion-vertical} muestran las vistas que se derivan de cada tabla. Las tablas se dibujan con borde continuo y encabezado oscuro, y las vistas con borde punteado y encabezado claro. Las flechas continuas indican de qué tabla obtiene sus datos cada vista; las punteadas, la tabla que se consulta para evaluar su condición. Las demás tablas y relaciones del esquema no cambian respecto al diagrama relacional (figura~\ref{fig:diagrama-er}).
 
 \captura{segmentacion_horizontal.jpg}{Fragmentación horizontal de \nem{inversion}}{segmentacion-horizontal}
 Las flechas continuas indican el origen de los datos; las punteadas, la tabla que se consulta para evaluar la condición.

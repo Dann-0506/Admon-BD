@@ -1,6 +1,6 @@
 \chapter{Configuraci\'on del entorno}
 \label{cap:entorno}
-El sistema se implementa en PostgreSQL 17.7 y MySQL 8.0.39. Este cap\'itulo describe la configuraci\'on de las instancias de cada gestor, incluidos los par\'ametros de registro de actividad que sustentan la bit\'acora de instancia.
+El sistema se implementa en PostgreSQL 17.7 y MySQL 8.0.39. Este cap\'itulo describe la configuraci\'on de las instancias de cada gestor, incluidos los par\'ametros de registro de actividad que sustentan el registro del servidor.
 
 Ambos gestores se instalan en un mismo equipo, cuyas caracter\'isticas se muestran en la tabla~\ref{tab:equipo-servidor}.
 
@@ -60,7 +60,7 @@ La figura~\ref{fig:memoria} muestra el consumo de memoria medido con las cuatro 
 
 \captura{memoria.png}{Consumo de memoria de las instancias en el monitor de recursos}{memoria}
 
-\paragraph{Configuraci\'on de la segunda instancia.} Todos los par\'ametros descritos en este cap\'itulo se aplican con el mismo valor en la segunda instancia de cada gestor. De esta forma, ambas instancias se comportan igual y las diferencias entre ellas se deben \'unicamente al particionamiento y la segmentaci\'on de su esquema. Las \'unicas excepciones son los valores que identifican a cada instancia y que no pueden repetirse en un mismo equipo, como el puerto, el directorio de datos y el directorio de los tablespaces; estos se describen en el cap\'itulo de multi-instancias.
+\paragraph{Configuraci\'on de la segunda instancia.} Los par\'ametros de este cap\'itulo se aplican con el mismo valor en la segunda instancia de cada gestor, salvo los que identifican a cada instancia, como el puerto y los directorios (cap\'itulo~\ref{cap:multiinstancias}).
 
 \section{PostgreSQL}
 
@@ -106,14 +106,14 @@ Los programas y los datos se encuentran en directorios separados, de modo que un
 		\nem{max\us parallel\us workers\us per\us gather} & 2 & 0 & Evita la ejecución en paralelo, ya que los cuatro núcleos se comparten entre cuatro	instancias. \\
 		\nem{idle\us in\us transaction\us session\us timeout} & 0 & 10min &	Cierra las sesiones que mantienen una transacción abierta sin actividad, que podrían bloquear tablas para el resto de los usuarios. \\
 		\nem{timezone} & Del sistema & \nem{America/\allowbreak Mexico\us City} & Fija la hora local en el gestor, sin depender de la configuración del sistema operativo. \\
-		\nem{datestyle} & Según el idioma del sistema & \nem{ISO, DMY} & Interpreta las fechas en el orden día, mes y año utilizado en el diccionario de datos. \\
+		\nem{datestyle} & Según el idioma del sistema & \nem{ISO, DMY} & Interpreta las fechas en el orden día, mes y año utilizado en el diccionario de datos (capítulo~\ref{cap:diccionario}). \\
 		\bottomrule
 	\end{tabular}
 \end{table}
 
 Los demás parámetros conservan su valor por defecto por considerarse adecuados para el sistema. Destacan \nem{shared\us buffers} (128~MB), que basta para mantener en memoria el volumen completo de datos; \nem{work\us mem} (4~MB) y \nem{maintenance\us work\us mem} (64~MB), suficientes para las operaciones de ordenamiento y mantenimiento sobre ese volumen; y \nem{autovacuum}, que se mantiene activo para conservar actualizadas las estadísticas y recuperar el espacio de las filas modificadas sin intervención manual. La instancia utiliza la codificación UTF-8, que admite los acentos y la letra ñ presentes en nombres y domicilios.
 
-\paragraph{Parámetros de registro de actividad.} La tabla~\ref{tab:registro-pg} muestra los parámetros que determinan qué registra la instancia en sus archivos de registro, los cuales constituyen la bitácora de instancia.
+\paragraph{Parámetros de registro de actividad.} La tabla~\ref{tab:registro-pg} muestra los parámetros que determinan qué registra la instancia en sus archivos de registro, que en este manual se denominan registro del servidor.
 
 \begin{table}[H]
 	\centering
@@ -124,7 +124,7 @@ Los demás parámetros conservan su valor por defecto por considerarse adecuados
 		\toprule
 		\textbf{Parámetro} & \textbf{Por defecto} & \textbf{Configurado} & \textbf{Justificación} \\
 		\midrule
-		\nem{logging\us collector} & \nem{on} (instalador) & \nem{on} & Guarda los mensajes del servidor en archivos; sin él, la bitácora de instancia	no se conserva. Se mantiene el valor que establece el instalador. \\
+		\nem{logging\us collector} & \nem{on} (instalador) & \nem{on} & Guarda los mensajes del servidor en archivos; sin él, el registro del servidor no se conserva. Se mantiene el valor que establece el instalador. \\
 		\nem{log\us directory} & \nem{log} & \nem{log} & La ruta es relativa al directorio de datos, por lo que cada instancia guarda sus registros en su propio directorio sin necesidad de cambiar el valor. \\
 		\nem{log\us filename} & \nem{postgresql-\allowbreak\%Y-\%m-\%d\us \%H\%M\%S.log} & \nem{postgresql-\allowbreak\%Y-\%m-\%d.log} & Un archivo por día, identificado por su fecha, en lugar de uno por cada inicio del	servidor. \\
 		\nem{log\us statement} & \nem{none} & \nem{mod} & Registra las sentencias que crean o modifican estructuras y datos (DDL y DML). Se excluyen las consultas, que aumentarían el volumen del registro sin	reflejar cambios. \\
@@ -223,7 +223,7 @@ En MySQL, el instalador separa los programas, ubicados en \nem{Program Files}, d
 
 Los demás parámetros conservan su valor por defecto. Destacan el modo SQL estricto (\nem{sql\us mode}), que rechaza los datos inválidos en lugar de truncarlos o ajustarlos, y \nem{character\us set\us server} con el valor \nem{utf8mb4}, que admite acentos y la letra ñ. El parámetro \nem{lower\us case\us table\us names} conserva el valor 1, propio de Windows; como solo puede definirse al inicializar la instancia y todos los nombres del esquema están en minúsculas, no requiere modificarse.
 
-\paragraph{Parámetros de registro de actividad.} La tabla~\ref{tab:registro-mysql} muestra los parámetros que determinan qué registra la instancia en sus archivos de registro, los cuales constituyen la bitácora de instancia.
+\paragraph{Parámetros de registro de actividad.} La tabla~\ref{tab:registro-mysql} muestra los parámetros que determinan qué registra la instancia en sus archivos de registro, que constituyen su registro del servidor.
 
 \begin{table}[H]
 	\centering
@@ -255,7 +255,7 @@ En MySQL, el origen permitido forma parte de cada cuenta de usuario:
 
 \begin{itemize}[leftmargin=*]
 	\item \textbf{Superusuario.} Solo existen cuentas de \nem{root} para el propio servidor: \nem{'root'@'localhost'}, creada por el instalador, y \nem{'root'@'127.0.0.1'} y \nem{'root'@'::1'}, que se agregan para las direcciones de loopback de IPv4 e IPv6. De este modo, la administración de la instancia solo es posible desde el servidor.
-	\item \textbf{Usuarios de operación.} Se definen con el origen \nem{'\%'}, es decir, desde cualquier dirección. MySQL no cuenta con un equivalente a \nem{samenet}, y la subred del hotspot cambia entre sesiones, por lo que restringir el origen a una subred concreta obligaría a modificar las cuentas en cada sesión. El acceso queda protegido por la autenticación de cada usuario y por los privilegios de su rol, descritos en el capítulo de usuarios y roles.
+	\item \textbf{Usuarios de operación.} Se definen con el origen \nem{'\%'}, es decir, desde cualquier dirección. MySQL no cuenta con un equivalente a \nem{samenet}, y la subred del hotspot cambia entre sesiones, por lo que restringir el origen a una subred concreta obligaría a modificar las cuentas en cada sesión. El acceso queda protegido por la autenticación de cada usuario y por los privilegios de su rol, descritos en el capítulo~\ref{cap:usuarios}.
 \end{itemize}
 
 \paragraph{Cuentas de loopback del superusuario.} Las cuentas adicionales de \nem{root} son consecuencia de \nem{skip\us name\us resolve}. En Windows, el cliente \nem{mysql} se conecta a \nem{localhost} por TCP/IP, porque la memoria compartida y las canalizaciones con nombre están desactivadas por defecto, de modo que el servidor recibe la conexión desde \nem{127.0.0.1} o \nem{::1}. Sin resolución de nombres, el servidor ya no asocia esas direcciones con el nombre \nem{localhost}, por lo que la cuenta del instalador deja de coincidir y rechaza al superusuario con el error 1130 (\nem{Host '127.0.0.1' is not allowed to connect}). Por ello, las cuentas se crean antes de activar el parámetro, con la misma contraseña y los mismos privilegios que \nem{'root'@'localhost'}:
@@ -272,7 +272,7 @@ En MySQL, el origen permitido forma parte de cada cuenta de usuario:
 
 La autenticación utiliza \nem{caching\us sha2\us password}, el método por defecto del gestor y el más seguro que ofrece.
 
-Además de las cuentas descritas, el gestor tiene sus cuentas internas (\nem{mysql.infoschema}, \nem{mysql.session} y \nem{mysql.sys}), que están bloqueadas y solo existen para \nem{localhost}.
+Además de las cuentas descritas, el gestor tiene sus cuentas internas (\nem{mysql.\allowbreak infoschema}, \nem{mysql.\allowbreak session} y \nem{mysql.\allowbreak sys}), que están bloqueadas y solo existen para \nem{localhost}.
 
 La conexión desde un equipo cliente se realiza con el nombre del equipo servidor (figura~\ref{fig:conexion-remota}). \nem{USER()} indica el origen real de la conexión y \nem{CURRENT\us USER()}, la cuenta con la que se autenticó:
 

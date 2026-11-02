@@ -1,4 +1,104 @@
-\chapter{\'Indices}
-\section{An\'alisis de columnas candidatas}
+\chapter{Índices}
+\label{cap:indices}
+
+Un índice es una estructura auxiliar que permite localizar las filas de una tabla por el valor de una o varias columnas, sin recorrer la tabla completa. Cada índice acelera las consultas que lo utilizan, pero ocupa espacio y el gestor debe actualizarlo en cada inserción, modificación o eliminación. Por ello, el esquema solo incluye los índices que sirven a una consulta del sistema.
+
+Los índices de este capítulo se crean en ambas instancias de cada gestor. En la segunda, se crean después del particionamiento (capítulo~\ref{cap:particionamiento}), de modo que se construyen sobre las tablas particionadas.
+
+\section{Análisis de columnas candidatas}
+
+\paragraph{Índices de las llaves.} Cada llave primaria y cada llave alterna crea un índice único, por lo que las búsquedas por clave sustituta, por RFC y por número de pagaré ya cuentan con uno. Un índice compuesto sirve también a las búsquedas por sus primeras columnas: \nem{pk\us interes} (\nem{inversion\us num}, \nem{interes\us fecha\us inicial}) y \nem{pk\us pago} (\nem{inversion\us num}, \nem{interes\us fecha\us inicial}, \nem{pago\us fecha}) atienden las búsquedas por \nem{inversion\us num}, que es la forma en que las consultas acceden a los periodos de interés y a los pagos de una inversión.
+
+\paragraph{Índices de las llaves foráneas.} Los gestores difieren en este punto. MySQL exige un índice que comience con las columnas de cada llave foránea y, si no existe, lo crea automáticamente con el nombre de la restricción. PostgreSQL no crea índices para las llaves foráneas. La tabla~\ref{tab:indices-fk} muestra el índice que atiende a cada llave foránea.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Índice de cada llave foránea}
+	\label{tab:indices-fk}
+	\begin{tabular}{@{}L{4cm} L{4.6cm} L{3.4cm} L{3.4cm}@{}}
+		\toprule
+		\textbf{Llave foránea} & \textbf{Columnas} & \textbf{PostgreSQL} & \textbf{MySQL} \\
+		\midrule
+		\nem{fk\us sucursal\us empresa} & \nem{sucursal.\allowbreak empresa\us rfc} & Sin índice & Automático \\
+		\nem{fk\us inversion\us sucursal} & \nem{inversion.\allowbreak sucursal\us num} & Sin índice & Automático \\
+		\nem{fk\us inversion\us cliente} & \nem{inversion.\allowbreak cliente\us num} & \nem{ix\us inversion\us cliente} & \nem{ix\us inversion\us cliente} \\
+		\nem{fk\us inversion\us aval} & \nem{inversion.\allowbreak aval\us num} & Sin índice & Automático \\
+		\nem{fk\us interes\us inversion} & \nem{interes.\allowbreak inversion\us num} & \nem{pk\us interes} & \nem{pk\us interes} \\
+		\nem{fk\us pago\us interes} & \nem{pago} (\nem{inversion\us num}, \nem{interes\us fecha\us inicial}) & \nem{pk\us pago} & \nem{pk\us pago} \\
+		\nem{fk\us liquidacion\us inversion} & \nem{liquidacion.\allowbreak inversion\us num} & \nem{pk\us liquidacion} & \nem{pk\us liquidacion} \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+En PostgreSQL, una llave foránea sin índice obliga al gestor a recorrer la tabla que la contiene cada vez que se elimina un registro referenciado o se modifica su llave, para aplicar la acción \nem{RESTRICT} o \nem{CASCADE}. En este sistema esas operaciones no ocurren en la práctica: ningún rol puede eliminar empresas, sucursales ni avales, sus llaves sustitutas no se modifican y el RFC de la empresa solo cambiaría de forma excepcional. Por ello, esas llaves foráneas no requieren índice. La de \nem{cliente\us num} es distinta, porque el estado de cuenta busca las inversiones de un cliente por esa columna.
+
+\paragraph{Columnas de las consultas.} Las candidatas son las columnas por las que las consultas de los objetivos (sección~\ref{sec:consultas-objetivos}), las vistas de segmentación (capítulo~\ref{cap:segmentacion}) y el auditor buscan o filtran filas. La tabla~\ref{tab:indices-candidatas} muestra cada una y la decisión tomada.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Columnas candidatas a índice}
+	\label{tab:indices-candidatas}
+	\begin{tabular}{@{}L{4.6cm} L{6.4cm} L{4.8cm}@{}}
+		\toprule
+		\textbf{Columna} & \textbf{Uso} & \textbf{Decisión} \\
+		\midrule
+		\nem{inversion.\allowbreak cliente\us num} & Inversiones de un cliente en su estado de cuenta (objetivo 3) & \nem{ix\us inversion\us cliente} \\
+		\nem{inversion.\allowbreak pagare\us fecha} & Inversiones suscritas en un periodo (objetivos 1 y 5) & \nem{ix\us inversion\us pagare\us fecha} \\
+		\nem{inversion.\allowbreak inversion\us fecha\us vencimiento} & Inversiones vencidas en un periodo (objetivo 2) y fragmentos de inversiones vigentes y vencidas & \nem{ix\us inversion\us vencimiento} \\
+		\nem{bitacora.\allowbreak bitacora\us fecha} & Revisión de la bitácora por periodos & \nem{ix\us bitacora\us fecha} \\
+		\nem{cliente\us nombre}, \nem{cliente\us apellido} & Búsqueda de personas por nombre (objetivo 1) & Sin índice \\
+		\nem{interes.\allowbreak interes\us fecha\us final}, \nem{pago.\allowbreak pago\us fecha} & Periodos exigibles y pagos realizados hasta la fecha de corte (objetivos 2 a 4) & Sin índice \\
+		\nem{bitacora\us usuario}, \nem{bitacora\us tabla}, \nem{bitacora\us operacion} & Filtros del auditor & Sin índice \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+\paragraph{Columnas que no se indexan.}
+
+\begin{itemize}[leftmargin=*]
+	\item \textbf{Nombre del cliente.} La búsqueda del objetivo 1 encuentra el texto en cualquier posición del nombre (\nem{'\%texto\%'}). Un índice ordinario solo sirve cuando se conoce el inicio del texto, por lo que no se utilizaría. Las alternativas, un índice de trigramas en PostgreSQL, que requiere instalar una extensión, o un índice de texto completo en MySQL, que busca palabras y no fragmentos, no se justifican para una tabla de clientes de este tamaño.
+	\item \textbf{Fechas de los periodos y de los pagos.} Las consultas llegan a los periodos y a los pagos a partir de una inversión, por medio de las llaves primarias; la fecha solo filtra los pocos registros de esa inversión. En la segunda instancia, además, las particiones de \nem{pago} se descartan por su fecha.
+	\item \textbf{Usuario, tabla y operación de la bitácora.} Tienen pocos valores distintos (seis usuarios, ocho tablas y tres operaciones), de modo que cada valor corresponde a una parte grande de la tabla y el gestor preferiría recorrerla. El auditor los combina con un periodo, que ya atiende \nem{ix\us bitacora\us fecha}.
+\end{itemize}
+
+\paragraph{Volumen y costo.} Con el volumen de los datos de prueba, el gestor puede preferir recorrer las tablas completas, ya que ocupan pocas páginas. Los índices responden al crecimiento de la operación: \nem{inversion} crece con cada pagaré y \nem{bitacora}, con cada cambio en los datos. Su costo se considera según la tabla. En \nem{inversion} es bajo, porque cada inversión se inserta una vez y rara vez se modifica. En \nem{bitacora} cada cambio en los datos produce una inserción, por lo que se limita a un solo índice, el de la columna por la que se revisa.
+
+La llave primaria de \nem{bitacora} (\nem{bitacora\us num}, \nem{bitacora\us fecha}) no atiende las búsquedas por fecha, porque su primera columna es el número de registro.
+
+\paragraph{Nomenclatura y ubicación.} Los índices se nombran con el prefijo \nem{ix\us}, la tabla y la columna, con los mismos nombres en ambos gestores, de acuerdo con la nomenclatura de las restricciones (capítulo~\ref{cap:implementacion}). Cada índice se ubica en el tablespace de su tabla (capítulo~\ref{cap:tablespaces}): los de \nem{inversion} en \nem{ts\us operacion} y el de \nem{bitacora} en \nem{ts\us bitacora}. De acuerdo con la sección~\ref{sec:admin-instancia}, los crea el DBA.
+
 \section{PostgreSQL}
+
+En PostgreSQL, un índice se crea en el tablespace por defecto de la base de datos y no en el de su tabla, por lo que cada sentencia indica su tablespace de forma explícita. En la segunda instancia, el índice de \nem{bitacora} se crea sobre la tabla particionada: el gestor crea un índice en cada partición, en el tablespace indicado, y lo agrega también a las particiones que se creen después.
+
+\begin{verbatim}
+	-- Ejecutado por dlandero en la base de datos inversiones de cada instancia
+	SET ROLE rol_admin_bd;
+
+	CREATE INDEX ix_inversion_cliente
+	  ON inversion (cliente_num) TABLESPACE ts_operacion;
+	CREATE INDEX ix_inversion_pagare_fecha
+	  ON inversion (pagare_fecha) TABLESPACE ts_operacion;
+	CREATE INDEX ix_inversion_vencimiento
+	  ON inversion (inversion_fecha_vencimiento) TABLESPACE ts_operacion;
+	CREATE INDEX ix_bitacora_fecha
+	  ON bitacora (bitacora_fecha) TABLESPACE ts_bitacora;
+\end{verbatim}
+
 \section{MySQL}
+
+En MySQL, InnoDB guarda cada índice en el tablespace de su tabla, por lo que las sentencias no lo indican. En la segunda instancia, el índice de \nem{bitacora} se divide igual que la tabla: cada partición guarda la parte del índice que corresponde a sus filas.
+
+\begin{verbatim}
+	-- Ejecutado por dlandero en la base de datos inversiones de cada instancia
+	CREATE INDEX ix_inversion_cliente      ON inversion (cliente_num);
+	CREATE INDEX ix_inversion_pagare_fecha ON inversion (pagare_fecha);
+	CREATE INDEX ix_inversion_vencimiento  ON inversion (inversion_fecha_vencimiento);
+	CREATE INDEX ix_bitacora_fecha         ON bitacora (bitacora_fecha);
+\end{verbatim}
+
+Al crear \nem{ix\us inversion\us cliente}, el gestor elimina el índice que había creado automáticamente para \nem{fk\us inversion\us cliente}, ya que el nuevo índice comienza con la misma columna y puede atender a la llave foránea. Los índices automáticos de las demás llaves foráneas se conservan, porque el gestor los exige.
+
+En la segunda instancia, los triggers que sustituyen a la llave foránea de \nem{pago} (capítulo~\ref{cap:particionamiento}) consultan \nem{interes} y \nem{pago} por las primeras columnas de sus llaves primarias, por lo que no requieren índices adicionales.

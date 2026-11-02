@@ -1,4 +1,5 @@
 \chapter{Usuarios y roles}
+\label{cap:usuarios}
 
 \section{Roles y matriz de privilegios}
 \label{sec:roles-matriz}
@@ -57,7 +58,7 @@ La tabla~\ref{tab:matriz} muestra los privilegios de cada rol sobre las tablas d
 	\end{enumerate}
 \end{small}
 
-\paragraph{Bit\'acora.} Ning\'un rol de operaci\'on tiene privilegios de INSERT, UPDATE o DELETE sobre la tabla \nem{bitacora}; \'unicamente los triggers escriben en ella. El DBA, como responsable del esquema, conserva control t\'ecnico sobre la tabla; por ello, sus acciones quedan registradas adem\'as en la bit\'acora de instancia, cuya configuraci\'on solo puede modificar el superusuario.
+\paragraph{Bit\'acora.} Ning\'un rol de operaci\'on tiene privilegios de INSERT, UPDATE o DELETE sobre la tabla \nem{bitacora}; \'unicamente los triggers escriben en ella. Su protecci\'on, incluso frente al DBA, se describe en el cap\'itulo~\ref{cap:bitacora}.
 
 \paragraph{Separaci\'on de funciones.} Quien da de alta la inversi\'on (\nem{rol\us ejecutivo}) no puede registrar pagos ni liquidaciones, y quien los registra (\nem{rol\us tesoreria}) no puede modificar las inversiones, por lo que el capital y las tasas quedan fuera de su alcance. Del mismo modo, el DBA administra la estructura de la base de datos, pero no participa en la operaci\'on del negocio.	
 
@@ -101,7 +102,7 @@ La administraci\'on del sistema se divide en dos niveles. El superusuario de cad
 		Cuenta & \nem{postgres} / \nem{root} & \nem{rol\us admin\us bd} \\
 		Alcance & Toda la instancia y todas sus bases de datos & Únicamente la base de datos del sistema \\
 		Instancias & Crea y configura las instancias, incluida la segunda instancia de cada gestor & --- \\
-		Configuración & Parámetros del servidor y bitácora de instancia & --- \\
+		Configuración & Parámetros y registro del servidor & --- \\
 		Tablespaces & Crea los tablespaces y, en PostgreSQL, los asigna al DBA & Asigna las tablas a los tablespaces \\
 		Base de datos & Crea el rol del DBA y le otorga control sobre la base de datos & Crea el esquema, las tablas, los índices, las particiones y la segmentación \\
 		Objetos programados & --- & Crea los procedimientos, funciones, triggers y vistas \\
@@ -170,13 +171,13 @@ En PostgreSQL, roles y usuarios son el mismo tipo de objeto; la diferencia es qu
 	RESET ROLE;
 \end{verbatim}
 
-Los privilegios de cada rol sobre las tablas, incluidos los de \nem{rol\us respaldo}, se otorgan en la implementación física, una vez que las tablas existen. En PostgreSQL, \nem{pg\us dump} solo requiere lectura sobre las tablas y las secuencias del esquema, por lo que el usuario de respaldo no
+Los privilegios de cada rol sobre las tablas, incluidos los de \nem{rol\us respaldo}, se otorgan en el capítulo~\ref{cap:implementacion}, una vez que las tablas existen. En PostgreSQL, \nem{pg\us dump} solo requiere lectura sobre las tablas y las secuencias del esquema, por lo que el usuario de respaldo no
 necesita privilegios sobre la instancia.
 
 \section{Creaci\'on de roles y usuarios en MySQL}
 \label{sec:roles-mysql}
 
-En MySQL, los roles y los usuarios son objetos distintos, y los roles concedidos a un usuario permanecen inactivos hasta que se activan. Por ello, cada usuario se crea con su rol como rol por defecto (\nem{DEFAULT ROLE}), de modo que sus privilegios están disponibles desde el inicio de la sesión. Todos los usuarios se definen con el origen \nem{'\%'}, por las razones expuestas en la configuración del entorno.
+En MySQL, los roles y los usuarios son objetos distintos, y los roles concedidos a un usuario permanecen inactivos hasta que se activan. Por ello, cada usuario se crea con su rol como rol por defecto (\nem{DEFAULT ROLE}), de modo que sus privilegios están disponibles desde el inicio de la sesión. Todos los usuarios se definen con el origen \nem{'\%'}, por las razones expuestas en la sección~\ref{sec:conexion-mysql}.
 
 \paragraph{Ejecutado por el superusuario.} El superusuario crea el rol del DBA, le otorga el control total sobre la base de datos \nem{inversiones}, que en MySQL equivale a ser su dueño, y los privilegios necesarios para administrar roles y usuarios. MySQL permite otorgar privilegios sobre una base de datos que aún no existe, por lo que este paso puede realizarse antes de crearla.
 

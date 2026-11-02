@@ -1,4 +1,5 @@
 \chapter{Implementaci\'on f\'isica}
+\label{cap:implementacion}
 El esquema se implementa de la misma manera en ambos gestores: las mismas tablas, columnas, llaves y restricciones, con los mismos nombres. Las diferencias se limitan a la sintaxis y a los tipos de dato propios de cada gestor. Este cap\'itulo describe las decisiones comunes a ambas implementaciones.
 
 \paragraph{Equivalencia de tipos.} El diccionario de datos utiliza tipos genéricos. La tabla~\ref{tab:equivalencia-tipos} muestra su equivalencia en cada gestor.
@@ -720,7 +721,7 @@ Los privilegios del auditor se otorgan sobre la base de datos completa (\nem{inv
 
 \section{Datos de prueba}
 
-Los datos de prueba son ficticios y representan la operación de la empresa entre enero de 2024 y la fecha de carga, el 28 de octubre de 2026. El volumen supera el mínimo de quince registros por tabla por dos razones. Primero, cada estado de una inversión y cada forma de pago debe tener varios registros, para que las consultas de los objetivos devuelvan resultados significativos. Segundo, las tablas que se particionan en la segunda instancia deben tener registros en cada rango. Aun así, el volumen se mantiene pequeño para que la carga ocupe una fracción mínima de la memoria asignada a cada instancia.
+Los datos de prueba son ficticios y representan la operación de la empresa entre enero de 2024 y la fecha de carga, el 28 de octubre de 2026. Salvo en \nem{empresa}, que representa a la única empresa emisora, y en \nem{bitacora}, que la carga no alimenta, el volumen supera el mínimo de quince registros por tabla por dos razones. Primero, cada estado de una inversión y cada forma de pago debe tener varios registros, para que las consultas de los objetivos devuelvan resultados significativos. Segundo, las tablas que se particionan en la segunda instancia deben tener registros en cada rango. Aun así, el volumen se mantiene pequeño para que la carga ocupe una fracción mínima de la memoria asignada a cada instancia.
 
 La tabla~\ref{tab:escenarios-prueba} describe los escenarios que cubren los datos y la tabla~\ref{tab:volumen-prueba} el número de registros por tabla.
 

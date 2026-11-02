@@ -7,7 +7,7 @@ El sistema utiliza dos instancias de cada gestor. La primera contiene el esquema
 
 \section{Arquitectura de las instancias}
 
-Las dos instancias de cada gestor utilizan los mismos programas, instalados una sola vez; lo que las distingue es su directorio de datos, su configuración, su puerto y el servicio de Windows que las ejecuta (tabla~\ref{tab:instancias}). La primera instancia de cada gestor es la que creó el instalador, con las rutas descritas en la configuración del entorno. La segunda se crea manualmente, con sus archivos bajo \nem{C:\bs instancias}.
+Las dos instancias de cada gestor utilizan los mismos programas, instalados una sola vez; lo que las distingue es su directorio de datos, su configuración, su puerto y el servicio de Windows que las ejecuta (tabla~\ref{tab:instancias}). La primera instancia de cada gestor es la que creó el instalador, con las rutas descritas en el capítulo~\ref{cap:entorno}. La segunda se crea manualmente, con sus archivos bajo \nem{C:\bs instancias}.
 
 \begin{table}[H]
 	\centering
@@ -29,7 +29,7 @@ Las dos instancias de cada gestor utilizan los mismos programas, instalados una 
 	\end{tabular}
 \end{table}
 
-\paragraph{Configuración idéntica.} Como se indicó en la configuración del entorno, la segunda instancia de cada gestor utiliza los mismos parámetros que la primera, excepto los que identifican a la instancia y no pueden repetirse en un mismo equipo. Para garantizarlo, su archivo de configuración no se escribe de nuevo: se copia el de la primera instancia y se modifican únicamente esos valores. Los archivos de registro de cada instancia quedan separados sin cambios adicionales, porque sus rutas son relativas al directorio de datos.
+\paragraph{Configuración idéntica.} La segunda instancia de cada gestor utiliza los mismos parámetros que la primera (capítulo~\ref{cap:entorno}), excepto los que identifican a la instancia y no pueden repetirse en un mismo equipo. Para garantizarlo, su archivo de configuración no se escribe de nuevo: se copia el de la primera instancia y se modifican únicamente esos valores. Los archivos de registro de cada instancia quedan separados sin cambios adicionales, porque sus rutas son relativas al directorio de datos.
 
 \paragraph{Conexión.} Los clientes eligen la instancia por su puerto: \nem{psql -p 5434} o \nem{mysql -P 3308}. Las reglas de acceso son las mismas en ambas instancias, porque \nem{pg\us hba.conf} se copia de la primera instancia y las cuentas de MySQL se crean con los mismos scripts. Para conectarse desde otro equipo, el firewall de Windows debe permitir también los puertos 5434 y 3308.
 
@@ -142,13 +142,12 @@ La segunda instancia se construye con el mismo procedimiento que la primera, has
 		\toprule
 		& \textbf{Ejecuta} & \textbf{Paso} \\
 		\midrule
-		1 & Superusuario & Rol del DBA y, en PostgreSQL, la base de datos (secciones~\ref{sec:roles-pg} y~\ref{sec:roles-mysql}, e implementación física). \\
+		1 & Superusuario & Rol del DBA y, en PostgreSQL, la base de datos (secciones~\ref{sec:roles-pg} y~\ref{sec:roles-mysql}, y capítulo~\ref{cap:implementacion}). \\
 		2 & DBA & Base de datos en MySQL, roles de puesto y usuarios. En MySQL, el superusuario otorga además los privilegios sobre la instancia. \\
-		3 & DBA & Esquema, tablas, procedimientos, triggers de validación y permisos (implementación física). \\
+		3 & DBA & Esquema, tablas, procedimientos, triggers de validación y permisos (capítulo~\ref{cap:implementacion}). \\
 		4 & DBA & Copia de los datos de la primera instancia. \\
 		5 & DBA & Triggers de bitácora (capítulo~\ref{cap:bitacora}). \\
 		6 & Superusuario y DBA & Tablespaces, sin trasladar \nem{pago} ni \nem{bitacora} (capítulo~\ref{cap:tablespaces}). \\
-		7 & DBA & Verificación de que ambas instancias contienen los mismos datos. \\
 		\bottomrule
 	\end{tabular}
 \end{table}
@@ -178,18 +177,4 @@ A partir de ese punto, la segunda instancia recibe el particionamiento y la segm
 
 \nem{-{}-no-create-info} y \nem{-{}-skip-triggers} limitan el respaldo a los datos, ya que las tablas y los triggers existen en la segunda instancia; \nem{-{}-no-tablespaces} omite la información de los tablespaces, que requeriría el privilegio \nem{PROCESS}; y \nem{-{}-single-transaction} toma una copia consistente sin bloquear las tablas. \nem{mysqldump} escribe las tablas en orden alfabético, por ejemplo \nem{interes} antes que \nem{inversion}, por lo que el respaldo desactiva la verificación de llaves foráneas durante la carga (\nem{FOREIGN\us KEY\us CHECKS = 0}) y la restablece al final.
 
-\paragraph{Verificación.} La siguiente consulta, igual en ambos gestores, se ejecuta en las cuatro instancias; las dos instancias de cada gestor deben devolver los mismos valores (figura~\ref{fig:instancias-datos}).
-
-\begin{verbatim}
-	SELECT (SELECT COUNT(*) FROM cliente) AS clientes,
-	       (SELECT COUNT(*) FROM inversion) AS inversiones,
-	       (SELECT COUNT(*) FROM interes) AS periodos,
-	       (SELECT COUNT(*) FROM pago) AS pagos,
-	       (SELECT COUNT(*) FROM liquidacion) AS liquidaciones,
-	       (SELECT COUNT(*) FROM bitacora) AS bitacora,
-	       (SELECT SUM(pago_interes) + SUM(pago_mora) FROM pago) AS total_pagado;
-\end{verbatim}
-
-Ambas instancias contienen 25 clientes, 40 inversiones, 639 periodos de interés, 478 pagos, 15 liquidaciones y ningún registro de bitácora, con el mismo total pagado.
-
-\captura{instancias-datos.png}{Datos de las cuatro instancias}{instancias-datos}
+Al terminar la copia, ambas instancias contienen 25 clientes, 40 inversiones, 639 periodos de interés, 478 pagos, 15 liquidaciones y ningún registro de bitácora, con el mismo total pagado.

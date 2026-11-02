@@ -1,4 +1,5 @@
 \chapter{Introducci\'on}
+\label{cap:introduccion}
 
 \section{Descripci\'on del sistema}
 
@@ -39,10 +40,10 @@ Cada objetivo espec\'ifico se resuelve con una consulta que puede ejecutar cualq
 
 \paragraph{Fecha de corte.} El estado de una inversi\'on y los montos vencidos dependen del d\'ia en que se consultan. Por ello, las consultas no usan la fecha del sistema, sino una fecha de corte. En este manual es el 28 de octubre de 2026, la fecha de carga de los datos de prueba, con lo que los resultados mostrados son reproducibles. En la operaci\'on diaria, el par\'ametro toma el valor de \nem{CURRENT\us DATE}, que existe en ambos gestores.
 
-\paragraph{Criterios comunes.} Las consultas aplican las reglas de negocio del modelo conceptual:
+\paragraph{Criterios comunes.} Las consultas aplican las reglas de negocio del modelo conceptual (cap\'itulo~\ref{cap:conceptual}):
 
 \begin{itemize}[leftmargin=*]
-	\item El estado de una inversi\'on es \textbf{liquidada} si tiene una liquidaci\'on registrada hasta la fecha de corte; \textbf{vencida} si no la tiene y su vencimiento es anterior a la fecha de corte; y \textbf{vigente} en los dem\'as casos.
+	\item El estado de una inversi\'on (vigente, vencida o liquidada) se determina con esas reglas en la fecha de corte; una liquidaci\'on se toma en cuenta si su fecha es anterior o igual a la fecha de corte.
 	\item El inter\'es de un periodo es exigible cuando su fecha final es anterior o igual a la fecha de corte. Un pago se toma en cuenta si su fecha es anterior o igual a la fecha de corte.
 	\item El inter\'es moratorio se calcula como en los datos de prueba: sobre la tasa moratoria mensual, en proporci\'on a los d\'ias de atraso y con meses de 30 d\'ias.
 \end{itemize}
@@ -55,7 +56,7 @@ Cada objetivo espec\'ifico se resuelve con una consulta que puede ejecutar cualq
 
 La consulta lista a los inversionistas que suscribieron al menos un pagar\'e en el periodo y cuyo nombre completo contiene el texto buscado. Devuelve un rengl\'on por persona, con sus datos, el n\'umero de inversiones del periodo y el capital total invertido. Si el nombre buscado es una cadena vac\'ia, la consulta devuelve a todas las personas con inversiones en el periodo.
 
-\paragraph{B\'usqueda sin acentos.} La intercalaci\'on de la base de datos en MySQL compara los textos sin distinguir may\'usculas, min\'usculas ni acentos (cap\'itulo de implementaci\'on f\'isica). PostgreSQL s\'i los distingue, por lo que su consulta normaliza ambos lados de la comparaci\'on: la funci\'on \nem{translate} sustituye las vocales acentuadas y la letra \~n por su letra base, y el operador \nem{ILIKE} compara sin distinguir may\'usculas. De esta forma, en ambos gestores la b\'usqueda \nem{jose} encuentra a ``Jos\'e Luis'' y la b\'usqueda \nem{nunez} a ``N\'u\~nez''. La funci\'on \nem{translate} forma parte del gestor, por lo que no requiere instalar extensiones.
+\paragraph{B\'usqueda sin acentos.} La intercalaci\'on de la base de datos en MySQL compara los textos sin distinguir may\'usculas, min\'usculas ni acentos (cap\'itulo~\ref{cap:implementacion}). PostgreSQL s\'i los distingue, por lo que su consulta normaliza ambos lados de la comparaci\'on: la funci\'on \nem{translate} sustituye las vocales acentuadas y la letra \~n por su letra base, y el operador \nem{ILIKE} compara sin distinguir may\'usculas. De esta forma, en ambos gestores la b\'usqueda \nem{jose} encuentra a ``Jos\'e Luis'' y la b\'usqueda \nem{nunez} a ``N\'u\~nez''. La funci\'on \nem{translate} forma parte del gestor, por lo que no requiere instalar extensiones.
 
 \paragraph{PostgreSQL.}
 

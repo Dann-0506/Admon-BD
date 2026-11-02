@@ -9,7 +9,7 @@ La bitácora registra cada cambio efectivo en los datos del sistema: qué usuari
 
 \paragraph{Misma transacción.} El registro de bitácora forma parte de la transacción que hizo el cambio. Si la transacción se revierte, el registro también desaparece, de modo que la bitácora no contiene cambios que nunca ocurrieron. Los intentos rechazados quedan en el registro del servidor configurado en el capítulo~\ref{cap:entorno} (ver tabla~\ref{tab:bitacora-registro}).
 
-\paragraph{Usuario de la sesión.} Los triggers se ejecutan con los permisos del dueño de los objetos (\nem{SECURITY DEFINER} en PostgreSQL y \nem{DEFINER} en MySQL). Por eso el usuario se obtiene de la sesión, y no del contexto de ejecución, que siempre sería el del DBA. Lo mismo ocurre con el procedimiento \nem{generar\us tabla\us interes}: los periodos que crea quedan registrados a nombre del ejecutivo que lo llamó.
+\paragraph{Usuario de la sesión.} Los triggers de bitácora se ejecutan con los permisos del dueño de los objetos (\nem{SECURITY DEFINER} en PostgreSQL y \nem{DEFINER} en MySQL). Por eso el usuario se obtiene de la sesión, y no del contexto de ejecución, que siempre sería el del DBA. Lo mismo ocurre con el procedimiento \nem{generar\us tabla\us interes}: los periodos que crea quedan registrados a nombre del ejecutivo que lo llamó.
 
 \paragraph{Valores en JSON.} Los valores anteriores y nuevos se guardan como un objeto JSON con todas las columnas del renglón. Una sola tabla de bitácora sirve así para las ocho tablas, sin una columna por cada atributo auditado. En una inserción solo hay valor nuevo y en una eliminación solo valor anterior.
 

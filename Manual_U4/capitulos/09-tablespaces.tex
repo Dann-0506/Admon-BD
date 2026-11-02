@@ -35,12 +35,12 @@ Un tablespace es una ubicación en disco donde el gestor guarda los datos de los
 
 \paragraph{Responsabilidades.} De acuerdo con la sección~\ref{sec:admin-instancia}, el superusuario prepara los directorios y crea los tablespaces, porque ambos gestores reservan esa operación a cuentas con privilegios sobre toda la instancia. El DBA asigna las tablas a los tablespaces. En PostgreSQL, para poder hacerlo, el DBA debe ser dueño de los tablespaces; en MySQL, los tablespaces no tienen dueño y basta con los privilegios del DBA sobre la base de datos.
 
-\paragraph{Momento de la asignación.} Las tablas se crean como se describe en la implementación física, en la ubicación por defecto, y después el DBA las traslada a su tablespace. Así, los scripts de creación son los mismos con o sin tablespaces, y en ambas instancias. El traslado copia los datos de la tabla y la bloquea mientras dura la copia; con el volumen de este sistema es inmediato, pero en una base de datos en operación con tablas grandes conviene crear las tablas directamente en su tablespace.
+\paragraph{Momento de la asignación.} Las tablas se crean como se describe en el capítulo~\ref{cap:implementacion}, en la ubicación por defecto, y después el DBA las traslada a su tablespace. Así, los scripts de creación son los mismos con o sin tablespaces, y en ambas instancias. El traslado copia los datos de la tabla y la bloquea mientras dura la copia; con el volumen de este sistema es inmediato, pero en una base de datos en operación con tablas grandes conviene crear las tablas directamente en su tablespace.
 
 \paragraph{Segunda instancia.} La segunda instancia de cada gestor tiene sus tablespaces en un directorio propio. Ahí, las tablas \nem{pago} y \nem{bitacora} están particionadas, lo que produce la única diferencia entre gestores (tabla~\ref{tab:tablespaces-instancias}):
 
 \begin{itemize}[leftmargin=*]
-	\item En PostgreSQL, cada partición puede ubicarse en un tablespace, por lo que las particiones de \nem{pago} se ubican en \nem{ts\us operacion} y las de \nem{bitacora} en \nem{ts\us bitacora}. Su creación se describe en el capítulo de particionamiento.
+	\item En PostgreSQL, cada partición puede ubicarse en un tablespace, por lo que las particiones de \nem{pago} se ubican en \nem{ts\us operacion} y las de \nem{bitacora} en \nem{ts\us bitacora}. Su creación se describe en el capítulo~\ref{cap:particionamiento}.
 	\item En MySQL, una tabla particionada no puede ubicarse en un tablespace general: el gestor rechaza la operación con el error 1478 (\nem{A partitioned table is not allowed in a shared tablespace}). La única alternativa es indicar un directorio para cada partición con la opción \nem{DATA DIRECTORY}, que requiere el privilegio global \nem{FILE}. Ese privilegio permite leer y escribir cualquier archivo al que tenga acceso el servidor, por lo que no se otorga al DBA; y que el superusuario creara las tablas contradiría la división de responsabilidades. Por ello, en la segunda instancia de MySQL, \nem{pago} y \nem{bitacora} permanecen en archivos individuales dentro del directorio de datos, y el tablespace \nem{ts\us bitacora} no se crea, ya que no contendría ninguna tabla.
 \end{itemize}
 
@@ -117,7 +117,7 @@ Dentro de cada directorio, el gestor crea una subcarpeta propia de su versión (
 
 \subsection{Asignaci\'on de las tablas}
 
-El DBA traslada cada tabla con \nem{ALTER TABLE \ldots{} SET TABLESPACE}. Esta sentencia traslada la tabla y su almacenamiento auxiliar (TOAST), donde PostgreSQL guarda los valores grandes, como los textos y JSON de la bitácora; pero \textbf{no traslada sus índices}, que deben moverse por separado con \nem{ALTER INDEX}. Los índices del esquema son los que crean las llaves primarias y alternas.
+El DBA traslada cada tabla con \nem{ALTER TABLE \ldots{} SET TABLESPACE}. Esta sentencia traslada la tabla y su almacenamiento auxiliar (TOAST), donde PostgreSQL guarda los valores grandes, como los textos y JSON de la bitácora; pero \textbf{no traslada sus índices}, que deben moverse por separado con \nem{ALTER INDEX}. En este punto, los índices del esquema son los que crean las llaves primarias y alternas; los del capítulo~\ref{cap:indices} se crean directamente en su tablespace.
 
 \begin{verbatim}
 	-- Ejecutado por dlandero en la base de datos inversiones

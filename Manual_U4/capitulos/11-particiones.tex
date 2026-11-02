@@ -14,7 +14,7 @@ El particionamiento se aplica en la segunda instancia de cada gestor, que hasta 
 	\item \nem{bitacora}: recibe un registro por cada cambio en los datos y nunca elimina registros. El auditor la revisa por periodos.
 \end{itemize}
 
-\paragraph{Criterio.} Ambas tablas se particionan por rango de fechas, con una partición por año. La clave de partición es \nem{pago\us fecha} en \nem{pago} y \nem{bitacora\us fecha} en \nem{bitacora}. Ambos gestores exigen que la clave de partición forme parte de la llave primaria, ya que cada partición verifica la unicidad de sus propias filas; por ese motivo, las llaves primarias de ambas tablas incluyen su fecha desde el modelo conceptual.
+\paragraph{Criterio.} Ambas tablas se particionan por rango de fechas, con una partición por año. La clave de partición es \nem{pago\us fecha} en \nem{pago} y \nem{bitacora\us fecha} en \nem{bitacora}. Ambos gestores exigen que la clave de partición forme parte de la llave primaria, ya que cada partición verifica la unicidad de sus propias filas; por ese motivo, las llaves primarias de ambas tablas incluyen su fecha desde el modelo conceptual (capítulo~\ref{cap:conceptual}).
 
 \paragraph{Particiones.} Las particiones de \nem{pago} corresponden a los años de los datos de prueba, y las de \nem{bitacora}, a los años en que el sistema ha registrado o registrará cambios, ya que la bitácora inicia su operación en 2026. La primera partición de cada tabla recibe también las fechas anteriores a su año, y la última, todas las posteriores, de modo que ninguna fecha queda sin partición (tabla~\ref{tab:particiones}). Las particiones tienen el mismo nombre en ambos gestores.
 
@@ -52,7 +52,7 @@ La bitácora no tiene registros, porque la carga inicial no se audita; sus parti
 
 \section{Diagrama relacional con particiones}
 
-La figura~\ref{fig:diagrama-particiones} muestra las tablas particionadas de la segunda instancia, sus particiones y el tablespace de cada una. Las demás tablas y relaciones no cambian respecto al diagrama relacional, con una excepción en MySQL: la relación entre \nem{interes} y \nem{pago} ya no se garantiza con una llave foránea, sino con triggers.
+La figura~\ref{fig:diagrama-particiones} muestra las tablas particionadas de la segunda instancia, sus particiones y el tablespace de cada una. Las demás tablas y relaciones no cambian respecto al diagrama relacional (figura~\ref{fig:diagrama-er}), con una excepción en MySQL: la relación entre \nem{interes} y \nem{pago} ya no se garantiza con una llave foránea, sino con triggers.
 
 \captura{diagrama_particiones.jpg}{Diagrama relacional con particiones}{diagrama-particiones}
 
@@ -62,11 +62,11 @@ La figura~\ref{fig:diagrama-particiones} muestra las tablas particionadas de la 
 
 \begin{enumerate}[leftmargin=*]
 	\item Cambia el nombre de las tablas originales, de sus llaves primarias y de la secuencia de la bitácora, para liberar esos nombres. Las llaves primarias deben renombrarse porque crean un índice, y dos índices del mismo esquema no pueden tener el mismo nombre.
-	\item Crea las tablas particionadas, con la misma definición que en la implementación física más la cláusula \nem{PARTITION BY RANGE}, y sus particiones en los tablespaces del capítulo~\ref{cap:tablespaces}. Cada partición recibe un índice para la llave primaria, que el gestor nombra automáticamente (por ejemplo, \nem{pago\us 2024\us pkey}) y ubica en el tablespace indicado por \nem{USING INDEX TABLESPACE}.
+	\item Crea las tablas particionadas, con la misma definición que en el capítulo~\ref{cap:implementacion}, más la cláusula \nem{PARTITION BY RANGE}, y sus particiones en los tablespaces del capítulo~\ref{cap:tablespaces}. Cada partición recibe un índice para la llave primaria, que el gestor nombra automáticamente (por ejemplo, \nem{pago\us 2024\us pkey}) y ubica en el tablespace indicado por \nem{USING INDEX TABLESPACE}.
 	\item Copia los datos, conservando sus llaves, y ajusta la secuencia de la bitácora al número más alto copiado.
 	\item Elimina las tablas originales.
 	\item Vuelve a crear los triggers de las nuevas tablas. La función de bitácora se reemplaza porque, en una tabla particionada, los triggers se ejecutan en cada partición, y \nem{TG\us TABLE\us NAME} devolvería, por ejemplo, \nem{pago\us 2026} en lugar de \nem{pago}. La función \nem{pg\us partition\us root} devuelve la tabla particionada a la que pertenece una partición, o un valor nulo si la tabla no está particionada; con \nem{COALESCE}, la función registra el nombre correcto en ambos casos.
-	\item Otorga los privilegios sobre \nem{pago}. El auditor y el usuario de respaldo reciben los de las nuevas tablas por los privilegios por defecto de la implementación física, pero estos no abarcan secuencias, y \nem{pg\us dump} necesita leer la nueva secuencia de la bitácora.
+	\item Otorga los privilegios sobre \nem{pago}. El auditor y el usuario de respaldo reciben los de las nuevas tablas por los privilegios por defecto del capítulo~\ref{cap:implementacion}, pero estos no abarcan secuencias, y \nem{pg\us dump} necesita leer la nueva secuencia de la bitácora.
 \end{enumerate}
 
 Al final, \nem{ANALYZE} actualiza las estadísticas de las nuevas tablas, que el planificador utiliza para elegir sus planes de ejecución.
@@ -200,7 +200,7 @@ Al final, \nem{ANALYZE} actualiza las estadísticas de las nuevas tablas, que el
 \begin{enumerate}[leftmargin=*]
 	\item Elimina la llave foránea \nem{fk\us pago\us interes}, ya que InnoDB no admite llaves foráneas en tablas particionadas.
 	\item Particiona \nem{pago} y \nem{bitacora} por rango de su columna de fecha. La partición \nem{RANGE COLUMNS} compara directamente los valores de la columna, sin convertirlos en números. El gestor reconstruye cada tabla repartiendo sus filas entre las particiones; la reconstrucción no activa los triggers, por lo que no genera registros en la bitácora.
-	\item Sustituye la llave foránea por dos procedimientos y cuatro triggers, con el mismo esquema que las validaciones de la implementación física. Los triggers de \nem{pago} rechazan un pago cuyo periodo de interés no existe, y los de \nem{interes} rechazan eliminar un periodo con pagos o cambiar su llave, que es el comportamiento de \nem{ON DELETE RESTRICT} y \nem{ON UPDATE RESTRICT}.
+	\item Sustituye la llave foránea por dos procedimientos y cuatro triggers, con el mismo esquema que las validaciones del capítulo~\ref{cap:implementacion}. Los triggers de \nem{pago} rechazan un pago cuyo periodo de interés no existe, y los de \nem{interes} rechazan eliminar un periodo con pagos o cambiar su llave, que es el comportamiento de \nem{ON DELETE RESTRICT} y \nem{ON UPDATE RESTRICT}.
 \end{enumerate}
 
 A diferencia de una llave foránea, los triggers no bloquean el registro referenciado mientras se completa la operación, por lo que no protegen contra dos operaciones simultáneas que se contradigan. En este sistema el riesgo no existe en la práctica, porque ningún rol de operación puede eliminar ni modificar periodos de interés.
