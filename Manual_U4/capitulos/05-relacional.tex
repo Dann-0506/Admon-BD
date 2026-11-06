@@ -44,7 +44,7 @@ La tabla~\ref{tab:cardinalidades} describe la cardinalidad de cada relaci\'on. L
 		\nem{cliente} -- \nem{inversion} & 1 : 0..N & \nem{inversion.\allowbreak cliente\us num} & Cada inversión pertenece a un solo cliente; un cliente puede tener varias inversiones o ninguna. \\
 		\nem{aval} -- \nem{inversion} & 0..1 : 0..N & \nem{inversion.\allowbreak aval\us num} & Una inversión puede tener un aval o ninguno, por lo que la llave foránea acepta nulos; un aval puede garantizar varias inversiones. \\
 		\nem{inversion} -- \nem{interes} & 1 : 1..N & \nem{interes.\allowbreak inversion\us num} & Cada inversión tiene un periodo de interés por cada mes de su plazo. \\
-		\nem{interes} -- \nem{pago} & 1 : 0..N & \nem{pago} (\nem{inversion\us num}, \nem{interes\us fecha\us inicial}) & Un periodo de interés puede estar pendiente de pago o cubrirse con uno o varios pagos. \\
+		\nem{interes} -- \nem{pago} & 1 : 0..N & \nem{pago} (\nem{inversion\us num}, \nem{interes\us num}) & Un periodo de interés puede estar pendiente de pago o cubrirse con uno o varios pagos. \\
 		\nem{inversion} -- \nem{liquidacion} & 1 : 0..1 & \nem{liquidacion.\allowbreak inversion\us num} & Una inversión se liquida una sola vez, por lo que la llave foránea es también la llave primaria; mientras no se liquida, no tiene registro. \\
 		\bottomrule
 	\end{tabular}

@@ -14,9 +14,12 @@ CREATE ROLE rol_tesoreria NOLOGIN;
 CREATE ROLE rol_auditor   NOLOGIN;
 CREATE ROLE rol_respaldo  NOLOGIN;
 
-CREATE USER dmejia   WITH PASSWORD 'Dmejia#2026'   IN ROLE rol_gerente;
-CREATE USER pzuniga  WITH PASSWORD 'Pzuniga#2026'  IN ROLE rol_ejecutivo;
-CREATE USER xzaleta  WITH PASSWORD 'Xzaleta#2026'  IN ROLE rol_tesoreria;
+-- Cuentas compartidas de operación (una por rol)
+CREATE USER op_gerente   WITH PASSWORD 'OpGerente#2026'   IN ROLE rol_gerente;
+CREATE USER op_ejecutivo WITH PASSWORD 'OpEjecutivo#2026' IN ROLE rol_ejecutivo;
+CREATE USER op_tesoreria WITH PASSWORD 'OpTesoreria#2026' IN ROLE rol_tesoreria;
+
+-- Cuentas administrativas (una por persona o herramienta)
 CREATE USER enovoa   WITH PASSWORD 'Enovoa#2026'   IN ROLE rol_auditor;
 CREATE USER respaldo WITH PASSWORD 'Respaldo#2026' IN ROLE rol_respaldo;
 

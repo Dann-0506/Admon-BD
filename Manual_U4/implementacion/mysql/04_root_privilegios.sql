@@ -11,3 +11,4 @@ GRANT PROCESS, SHOW_ROUTINE ON *.* TO rol_respaldo;
 
 -- Ejecutado por root
 GRANT SELECT ON performance_schema.threads TO rol_admin_bd;
+GRANT SELECT ON mysql.role_edges TO rol_admin_bd;

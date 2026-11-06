@@ -19,8 +19,8 @@ El modelo conceptual del sistema se compone de nueve entidades: \nem{EMPRESA}, \
 		\nem{CLIENTE}     & PK \nem{cliente\us num}; AK \nem{cliente\us rfc} \\
 		\nem{AVAL}        & PK \nem{aval\us num}; AK \nem{aval\us rfc} \\
 		\nem{INVERSION}   & PK \nem{inversion\us num}; AK \nem{pagare\us num} \\
-		\nem{INTERES}     & PK (\nem{inversion\us num}, \nem{interes\us fecha\us inicial}) \\
-		\nem{PAGO}        & PK (\nem{inversion\us num}, \nem{interes\us fecha\us inicial}, \nem{pago\us fecha}) \\
+		\nem{INTERES}     & PK (\nem{inversion\us num}, \nem{interes\us num}); AK (\nem{inversion\us num}, \nem{interes\us fecha\us inicial}) \\
+		\nem{PAGO}        & PK (\nem{inversion\us num}, \nem{interes\us num}, \nem{pago\us fecha}) \\
 		\nem{LIQUIDACION} & PK \nem{inversion\us num} \\
 		\nem{BITACORA}    & PK (\nem{bitacora\us num}, \nem{bitacora\us fecha}) \\
 		\bottomrule
@@ -37,7 +37,7 @@ Las relaciones entre las entidades son las siguientes:
 	\item \nem{CLIENTE} $\rightarrow$ \nem{INVERSION}: cada inversi\'on registra al cliente que invierte (\nem{cliente\us num}).
 	\item \nem{AVAL} $\rightarrow$ \nem{INVERSION}: cada inversi\'on registra, si existe, al aval que garantiza el pago (\nem{aval\us num}).
 	\item \nem{INVERSION} $\rightarrow$ \nem{INTERES}: cada periodo de inter\'es pertenece a una inversi\'on (\nem{inversion\us num}).
-	\item \nem{INTERES} $\rightarrow$ \nem{PAGO}: cada pago cubre un periodo de inter\'es (\nem{inversion\us num}, \nem{interes\us fecha\us inicial}).
+	\item \nem{INTERES} $\rightarrow$ \nem{PAGO}: cada pago cubre un periodo de inter\'es (\nem{inversion\us num}, \nem{interes\us num}).
 	\item \nem{INVERSION} $\rightarrow$ \nem{LIQUIDACION}: la liquidaci\'on registra la devoluci\'on del capital de una inversi\'on (\nem{inversion\us num}).
 	\item \nem{BITACORA} no se relaciona con las dem\'as entidades.
 \end{itemize}
@@ -65,7 +65,7 @@ Las relaciones entre las entidades son las siguientes:
 	\item \textbf{Liquidación como entidad propia.} La devolución del capital se registra en \nem{LIQUIDACION}, separada de los pagos de intereses, junto con el interés moratorio que genere su retraso.
 	\item \textbf{Empresa a través de la sucursal.} La inversión se relaciona con la sucursal y, por medio de ella, con la empresa, de modo que los datos de la empresa no se repiten en cada inversión.
 	\item \textbf{Tasa fija en la inversión.} Como el pagaré establece una tasa fija, las tasas ordinaria y moratoria se almacenan en \nem{INVERSION} en lugar de un catálogo de tasas independiente.
-	\item \textbf{Llaves sustitutas.} \nem{SUCURSAL}, \nem{CLIENTE}, \nem{AVAL} e \nem{INVERSION} usan una clave numérica como llave primaria; el RFC y el número de pagaré se conservan como llaves alternas. \nem{EMPRESA} usa su RFC como llave natural.
+	\item \textbf{Llaves sustitutas.} \nem{SUCURSAL}, \nem{CLIENTE}, \nem{AVAL} e \nem{INVERSION} usan una clave numérica como llave primaria; el RFC y el número de pagaré se conservan como llaves alternas. \nem{EMPRESA} usa su RFC como llave natural. \nem{INTERES} numera sus periodos dentro de cada inversi\'on (\nem{interes\us num}), de modo que \nem{PAGO} se une a su periodo con un n\'umero y no con una fecha; la fecha inicial se conserva como llave alterna.
 	\item \textbf{Clave de partición en la llave primaria.} Las llaves primarias de \nem{PAGO} y \nem{BITACORA} incluyen su fecha, porque ambos gestores exigen que la columna de partición forme parte de la llave primaria en la instancia particionada.
 	\item \textbf{Bitácora independiente.} \nem{BITACORA} registra los cambios de todas las tablas sin relacionarse con ellas, de modo que sus registros se conservan aunque los datos originales se modifiquen o eliminen.
 \end{itemize}

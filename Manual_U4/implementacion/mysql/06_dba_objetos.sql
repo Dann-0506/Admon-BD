@@ -21,6 +21,7 @@ BEGIN
   DECLARE v_monto       DECIMAL(14,2);
   DECLARE v_inicio      DATE;
   DECLARE v_fin         DATE;
+  DECLARE v_num         INT DEFAULT 0;
 
   SELECT inversion_capital, inversion_tasa, inversion_dia_pago,
          pagare_fecha, inversion_fecha_vencimiento
@@ -54,9 +55,10 @@ BEGIN
   END IF;
 
   WHILE v_fin <= v_vencimiento DO
-    INSERT INTO interes (inversion_num, interes_fecha_inicial,
+    SET v_num = v_num + 1;
+    INSERT INTO interes (inversion_num, interes_num, interes_fecha_inicial,
                          interes_fecha_final, interes_monto)
-    VALUES (p_inversion_num, v_inicio, v_fin, v_monto);
+    VALUES (p_inversion_num, v_num, v_inicio, v_fin, v_monto);
     SET v_inicio = v_fin;
     SET v_fin    = DATE_ADD(v_fin, INTERVAL 1 MONTH);
   END WHILE;

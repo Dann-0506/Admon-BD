@@ -82,7 +82,8 @@ El diccionario de datos lista los atributos del esquema organizados por tabla. L
 
 \begin{diccionario}{interes}
 	\nem{inversion\us num} & Inversión a la que pertenece el periodo & INT & $>0$ & --- & No & PK compuesta, FK & \nem{inversion.\allowbreak inversion\us num} (RESTRICT, RESTRICT) \\
-	\nem{interes\us fecha\us inicial} & Fecha inicial del periodo de interés & DATE & DD/MM/YYYY & --- & No & PK compuesta & --- \\
+	\nem{interes\us num} & Número del periodo dentro de la inversión (1, 2, 3, \ldots) & INT & $>0$, consecutivo & --- & No & PK compuesta & --- \\
+	\nem{interes\us fecha\us inicial} & Fecha inicial del periodo de interés & DATE & DD/MM/YYYY & --- & No & AK compuesta con \nem{inversion\us num} & --- \\
 	\nem{interes\us fecha\us final} & Fecha final del periodo (vence el pago) & DATE & DD/MM/YYYY, mayor a la inicial & --- & No & --- & --- \\
 	\nem{interes\us monto} & Interés programado del periodo & DECIMAL & $\geq 0$, 0.00 & 14,2 & No & --- & --- \\
 \end{diccionario}
@@ -92,8 +93,8 @@ El diccionario de datos lista los atributos del esquema organizados por tabla. L
 \section{Tabla pago}
 
 \begin{diccionario}{pago}
-	\nem{inversion\us num} & Inversión pagada & INT & $>0$ & --- & No & PK compuesta, FK compuesta & \nem{interes} (\nem{inversion\us num}, \nem{interes\us fecha\us inicial}) (RESTRICT, RESTRICT) \\
-	\nem{interes\us fecha\us inicial} & Periodo que cubre el pago & DATE & DD/MM/YYYY & --- & No & PK compuesta, FK compuesta & \nem{interes} (\nem{inversion\us num}, \nem{interes\us fecha\us inicial}) (RESTRICT, RESTRICT) \\
+	\nem{inversion\us num} & Inversión pagada & INT & $>0$ & --- & No & PK compuesta, FK compuesta & \nem{interes} (\nem{inversion\us num}, \nem{interes\us num}) (RESTRICT, RESTRICT) \\
+	\nem{interes\us num} & Número del periodo que cubre el pago & INT & $>0$ & --- & No & PK compuesta, FK compuesta & \nem{interes} (\nem{inversion\us num}, \nem{interes\us num}) (RESTRICT, RESTRICT) \\
 	\nem{pago\us fecha} & Fecha del pago (clave de partición) & DATE & DD/MM/YYYY & --- & No & PK compuesta & --- \\
 	\nem{pago\us interes} & Monto pagado por interés ordinario & DECIMAL & $\geq 0$, 0.00 & 14,2 & No & --- & --- \\
 	\nem{pago\us mora} & Monto pagado por interés moratorio & DECIMAL & $\geq 0$, 0.00, por defecto 0 & 14,2 & No & --- & --- \\
@@ -115,10 +116,11 @@ El diccionario de datos lista los atributos del esquema organizados por tabla. L
 \begin{diccionario}{bitacora}
 	\nem{bitacora\us num} & Número del registro de bitácora & BIGINT & $>0$, autoincremental & --- & No & PK compuesta & --- \\
 	\nem{bitacora\us fecha} & Fecha y hora del evento (clave de partición) & TIMESTAMP & DD/MM/YYYY HH:MM:SS & --- & No & PK compuesta & --- \\
-	\nem{bitacora\us usuario} & Usuario que inició la sesión (no el dueño ni el definer del trigger) & VARCHAR & AAAA & 100 & No & --- & --- \\
+	\nem{bitacora\us rol} & Rol del sistema de la cuenta que inició la sesión (no el dueño ni el definer del trigger) & VARCHAR & AAAA & 63 & No & --- & --- \\
+	\nem{bitacora\us usuario} & Persona que realizó el cambio: nombre declarado en las cuentas operativas, nombre de la cuenta en las administrativas & VARCHAR & AAAA & 100 & No & --- & --- \\
 	\nem{bitacora\us tabla} & Tabla afectada por la operación & VARCHAR & AAAA & 63 & No & --- & --- \\
 	\nem{bitacora\us operacion} & Tipo de operación ejecutada & VARCHAR & INSERT, UPDATE o DELETE & 6 & No & --- & --- \\
-	\nem{bitacora\us ip} & Dirección IP de origen & VARCHAR & IPv4 / IPv6 & 45 & Sí & --- & --- \\
+	\nem{bitacora\us ip} & Dirección IP de origen de la conexión & VARCHAR & IPv4 / IPv6 & 45 & Sí & --- & --- \\
 	\nem{bitacora\us sesion} & Identificador de sesión o transacción & BIGINT & $>0$ & --- & Sí & --- & --- \\
 	\nem{bitacora\us query} & Sentencia ejecutada & TEXT & AAAA & --- & Sí & --- & --- \\
 	\nem{bitacora\us dato\us anterior} & Valores antes del cambio & JSON & JSON & --- & Sí & --- & --- \\

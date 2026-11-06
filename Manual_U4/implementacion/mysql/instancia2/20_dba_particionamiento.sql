@@ -31,24 +31,24 @@ ALTER TABLE bitacora
 DELIMITER //
 
 CREATE DEFINER = CURRENT_USER PROCEDURE validar_pago_interes(
-  IN p_inversion_num INT, IN p_interes_fecha_inicial DATE)
+  IN p_inversion_num INT, IN p_interes_num INT)
 READS SQL DATA
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM interes
                  WHERE inversion_num = p_inversion_num
-                   AND interes_fecha_inicial = p_interes_fecha_inicial) THEN
+                   AND interes_num = p_interes_num) THEN
     SIGNAL SQLSTATE '45000'
       SET MESSAGE_TEXT = 'El periodo de interés del pago no existe';
   END IF;
 END //
 
 CREATE DEFINER = CURRENT_USER PROCEDURE validar_interes_sin_pagos(
-  IN p_inversion_num INT, IN p_interes_fecha_inicial DATE)
+  IN p_inversion_num INT, IN p_interes_num INT)
 READS SQL DATA
 BEGIN
   IF EXISTS (SELECT 1 FROM pago
              WHERE inversion_num = p_inversion_num
-               AND interes_fecha_inicial = p_interes_fecha_inicial) THEN
+               AND interes_num = p_interes_num) THEN
     SIGNAL SQLSTATE '45000'
       SET MESSAGE_TEXT = 'El periodo de interés tiene pagos registrados';
   END IF;
@@ -57,28 +57,28 @@ END //
 CREATE DEFINER = CURRENT_USER TRIGGER trg_pago_interes_ins
   BEFORE INSERT ON pago FOR EACH ROW
 BEGIN
-  CALL validar_pago_interes(NEW.inversion_num, NEW.interes_fecha_inicial);
+  CALL validar_pago_interes(NEW.inversion_num, NEW.interes_num);
 END //
 
 CREATE DEFINER = CURRENT_USER TRIGGER trg_pago_interes_upd
   BEFORE UPDATE ON pago FOR EACH ROW
 BEGIN
-  CALL validar_pago_interes(NEW.inversion_num, NEW.interes_fecha_inicial);
+  CALL validar_pago_interes(NEW.inversion_num, NEW.interes_num);
 END //
 
 CREATE DEFINER = CURRENT_USER TRIGGER trg_interes_pago_del
   BEFORE DELETE ON interes FOR EACH ROW
 BEGIN
-  CALL validar_interes_sin_pagos(OLD.inversion_num, OLD.interes_fecha_inicial);
+  CALL validar_interes_sin_pagos(OLD.inversion_num, OLD.interes_num);
 END //
 
 CREATE DEFINER = CURRENT_USER TRIGGER trg_interes_pago_upd
   BEFORE UPDATE ON interes FOR EACH ROW
 BEGIN
   IF NEW.inversion_num <> OLD.inversion_num
-     OR NEW.interes_fecha_inicial <> OLD.interes_fecha_inicial THEN
+     OR NEW.interes_num <> OLD.interes_num THEN
     CALL validar_interes_sin_pagos(OLD.inversion_num,
-                                   OLD.interes_fecha_inicial);
+                                   OLD.interes_num);
   END IF;
 END //
 

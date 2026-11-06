@@ -15,12 +15,36 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = inversiones
 AS $$
+DECLARE
+  v_rol     VARCHAR(63);
+  v_usuario VARCHAR(100);
 BEGIN
-  INSERT INTO bitacora (bitacora_fecha, bitacora_usuario, bitacora_tabla,
-                        bitacora_operacion, bitacora_ip, bitacora_sesion,
-                        bitacora_query, bitacora_dato_anterior,
-                        bitacora_dato_nuevo)
-  VALUES (LOCALTIMESTAMP, session_user, TG_TABLE_NAME, TG_OP,
+  -- Rol del sistema al que pertenece la cuenta que inició la sesión
+  SELECT r.rolname INTO v_rol
+  FROM pg_auth_members m
+  JOIN pg_roles r ON r.oid = m.roleid
+  WHERE m.member = (SELECT oid FROM pg_roles WHERE rolname = session_user)
+    AND r.rolname LIKE 'rol\_%';
+  v_rol := COALESCE(v_rol, 'sin_rol');
+
+  IF v_rol IN ('rol_gerente', 'rol_ejecutivo', 'rol_tesoreria') THEN
+    -- Cuenta compartida: la persona se identifica con SET LOCAL
+    v_usuario := NULLIF(btrim(
+                   current_setting('inversiones.usuario', true)), '');
+    IF v_usuario IS NULL THEN
+      RAISE EXCEPTION
+        'Falta SET LOCAL inversiones.usuario al inicio de la transacción';
+    END IF;
+  ELSE
+    -- Cuenta administrativa: la cuenta identifica a la persona
+    v_usuario := session_user;
+  END IF;
+
+  INSERT INTO bitacora (bitacora_fecha, bitacora_rol, bitacora_usuario,
+                        bitacora_tabla, bitacora_operacion, bitacora_ip,
+                        bitacora_sesion, bitacora_query,
+                        bitacora_dato_anterior, bitacora_dato_nuevo)
+  VALUES (LOCALTIMESTAMP, v_rol, v_usuario, TG_TABLE_NAME, TG_OP,
           host(inet_client_addr()), pg_backend_pid(), current_query(),
           CASE WHEN TG_OP IN ('UPDATE', 'DELETE') THEN to_jsonb(OLD) END,
           CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN to_jsonb(NEW) END);

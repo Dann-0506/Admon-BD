@@ -1,7 +1,7 @@
 \chapter{Segmentaci\'on}
 \label{cap:segmentacion}
 
-La segmentación divide una tabla en fragmentos lógicos mediante vistas. A diferencia del particionamiento, la tabla no se modifica físicamente: sus datos permanecen en un solo lugar y cada fragmento es una vista que selecciona una parte de sus filas o de sus columnas. Los usuarios consultan el fragmento que necesitan como si fuera una tabla, y el gestor obtiene sus datos de la tabla original en cada consulta.
+La segmentación divide una tabla en fragmentos lógicos mediante vistas. A diferencia del particionamiento, la tabla no se modifica físicamente: sus datos permanecen en un solo lugar y cada fragmento es una vista que selecciona una parte de sus filas o de sus columnas. Además de los fragmentos, el esquema define vistas derivadas, diseñadas para cubrir las consultas de los objetivos (secci\'on~\ref{sec:segmentacion-derivada}). Los usuarios consultan el fragmento que necesitan como si fuera una tabla, y el gestor obtiene sus datos de la tabla original en cada consulta.
 
 Como se indicó en el capítulo~\ref{cap:multiinstancias}, la segmentación se implementa en la segunda instancia de cada gestor, junto con el particionamiento.
 
@@ -24,7 +24,7 @@ Como se indicó en el capítulo~\ref{cap:multiinstancias}, la segmentación se i
 	\end{tabular}
 \end{table}
 
-\paragraph{Reglas de corrección.} Una fragmentación es correcta si cumple tres reglas, que el diseño de los fragmentos de este esquema garantiza:
+\paragraph{Reglas de corrección.} Una fragmentación es correcta si cumple tres reglas, que el diseño de los fragmentos de este esquema garantiza. Se aplican a los fragmentos; las vistas derivadas no son fragmentos y quedan fuera de ellas:
 
 \begin{itemize}[leftmargin=*]
 	\item \textbf{Completitud:} todo dato de la tabla aparece en algún fragmento. En la fragmentación horizontal, toda fila pertenece a un fragmento; en la vertical, toda columna.
@@ -60,7 +60,7 @@ Las condiciones son excluyentes y cubren todos los casos: una inversión tiene o
 
 \subsection{Fragmentación vertical de \nem{bitacora}}
 
-Las columnas de \nem{bitacora} se usan de dos formas distintas. Las que identifican el evento (quién, cuándo, desde dónde, en qué tabla y con qué operación) se consultan constantemente para revisar la actividad del sistema. Las que contienen la sentencia y los valores anteriores y nuevos solo se consultan al revisar un cambio en particular, y son además las más pesadas, de tipo \nem{TEXT} y \nem{JSON}. La tabla se divide en dos fragmentos según ese uso (tabla~\ref{tab:fragmentos-bitacora}).
+Las columnas de \nem{bitacora} se usan de dos formas distintas. Las que identifican el evento (con qué rol y quién, cuándo, desde dónde, en qué tabla y con qué operación) se consultan constantemente para revisar la actividad del sistema. Las que contienen la sentencia y los valores anteriores y nuevos solo se consultan al revisar un cambio en particular, y son además las más pesadas, de tipo \nem{TEXT} y \nem{JSON}. La tabla se divide en dos fragmentos según ese uso (tabla~\ref{tab:fragmentos-bitacora}).
 
 \begin{table}[H]
 	\centering
@@ -71,7 +71,7 @@ Las columnas de \nem{bitacora} se usan de dos formas distintas. Las que identifi
 		\toprule
 		\textbf{Vista} & \textbf{Columnas} & \textbf{Uso principal} \\
 		\midrule
-		\nem{bitacora\us resumen} & \nem{bitacora\us num}, \nem{bitacora\us fecha}, \nem{bitacora\us usuario}, \nem{bitacora\us tabla}, \nem{bitacora\us operacion}, \nem{bitacora\us ip}, \nem{bitacora\us sesion} & Revisión de la actividad: quién hizo qué y cuándo \\
+		\nem{bitacora\us resumen} & \nem{bitacora\us num}, \nem{bitacora\us fecha}, \nem{bitacora\us rol}, \nem{bitacora\us usuario}, \nem{bitacora\us tabla}, \nem{bitacora\us operacion}, \nem{bitacora\us ip}, \nem{bitacora\us sesion} & Revisión de la actividad: quién hizo qué y cuándo \\
 		\nem{bitacora\us detalle} & \nem{bitacora\us num}, \nem{bitacora\us fecha}, \nem{bitacora\us query}, \nem{bitacora\us dato\us anterior}, \nem{bitacora\us dato\us nuevo} & Revisión del contenido de un cambio \\
 		\bottomrule
 	\end{tabular}
@@ -81,12 +81,46 @@ Ambos fragmentos conservan la llave primaria, (\nem{bitacora\us num}, \nem{bitac
 
 \paragraph{Por qué vistas y no tablas separadas.} Dividir la bitácora en dos tablas físicas obligaría a cada trigger a escribir en ambas, y en MySQL no podría haber una llave foránea entre ellas, porque las tablas particionadas no admiten llaves foráneas. Con vistas, los triggers siguen escribiendo un solo registro en una sola tabla, y la fragmentación no modifica la forma de auditar descrita en el capítulo~\ref{cap:bitacora}. Las vistas tampoco dependen de que la tabla esté particionada: el gestor resuelve las particiones al consultarlas.
 
+\subsection{Segmentaci\'on derivada para los objetivos}
+\label{sec:segmentacion-derivada}
+
+Los fragmentos anteriores dividen una tabla. Algunos objetivos (el 2, el 3 y el 5) necesitan adem\'as datos calculados, como el estado de una inversi\'on, el inter\'es pendiente o la mora estimada, que provienen de varias tablas. Para que la consulta de cada objetivo no repita esos c\'alculos, la segunda instancia define dos vistas derivadas, \nem{interes\us saldo} e \nem{inversion\us estado}. No son fragmentos: unen y agregan tablas, por lo que no dividen ni pueden reunirse para reconstruir una tabla, y las reglas de correcci\'on no les aplican. Son vistas dise\~nadas a la medida de las consultas, y se apoyan en los fragmentos horizontales.
+
+Un periodo de inter\'es puede tener varios pagos. Si se unieran directamente \nem{interes} y \nem{pago}, el monto del periodo se repetir\'ia por cada pago y las sumas resultar\'ian multiplicadas. Por ello, \nem{interes\us saldo} calcula primero, para cada periodo, lo pagado, la mora pagada, el saldo y los d\'ias de atraso. A partir de ella, \nem{inversion\us estado} agrega los periodos de cada inversi\'on. El estado no se vuelve a calcular: lo da el fragmento al que pertenece la inversi\'on (\nem{inversion\us vigente}, \nem{inversion\us vencida} o \nem{inversion\us liquidada}), de modo que la regla del estado vive en un solo lugar.
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Columnas de la vista \nem{inversion\us estado}}
+	\label{tab:vista-estado}
+	\begin{tabular}{@{}l L{11cm}@{}}
+		\toprule
+		\textbf{Columna} & \textbf{Contenido} \\
+		\midrule
+		\nem{estado} & Liquidada, Vencida o Vigente. \\
+		\nem{dias\us vencida} & D\'ias desde el vencimiento hasta hoy; cero si est\'a liquidada o vigente. \\
+		\nem{plazo\us meses} & N\'umero de periodos de la tabla de inter\'es. \\
+		\nem{interes\us exigible} & Suma del inter\'es de los periodos terminados hasta hoy. \\
+		\nem{interes\us pagado} & Suma de los pagos de inter\'es registrados. \\
+		\nem{interes\us pendiente} & Inter\'es exigible menos inter\'es pagado. \\
+		\nem{periodos\us sin\us pagar} & Periodos terminados que conservan un saldo. \\
+		\nem{interes\us vencido} & Suma de los saldos de esos periodos. \\
+		\nem{mora\us pagada} & Mora pagada en los pagos mensuales y en la liquidaci\'on. \\
+		\nem{capital\us devuelto} & Capital de la liquidaci\'on; cero si no se ha liquidado. \\
+		\nem{mora\us estimada} & Mora que se adeudar\'ia si se liquidara hoy: el capital por los d\'ias desde el vencimiento, m\'as el saldo de cada periodo por los d\'ias desde su fecha final. Es un c\'alculo y no un valor almacenado: se registra hasta que la empresa lo paga, en \nem{pago} o en \nem{liquidacion}. \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+Las vistas calculan siempre a la fecha del sistema (\nem{CURRENT\us DATE}), igual que los fragmentos horizontales, por lo que su contenido cambia con el paso del tiempo. Solo existen en la segunda instancia, como el resto de la segmentaci\'on. En la primera instancia, los objetivos 2, 3 y 5 se resuelven directamente sobre las tablas, con consultas m\'as largas (secci\'on~\ref{sec:consultas-objetivos}).
+
 \subsection{Uso y privilegios de las vistas}
 
 Las vistas son de solo lectura para los usuarios del sistema: las altas y los cambios se siguen haciendo sobre las tablas, con los privilegios del capítulo~\ref{cap:implementacion}. Cada vista se ejecuta con los privilegios de su dueño, el DBA, por lo que otorgar el privilegio \nem{SELECT} sobre una vista da acceso a sus datos aunque el usuario no tenga acceso a la tabla. Por ello, los privilegios sobre las vistas siguen la misma matriz que los de las tablas:
 
 \begin{itemize}[leftmargin=*]
 	\item Los fragmentos de \nem{inversion} se otorgan al gerente, al ejecutivo y a la tesorería, que ya pueden consultar la tabla completa.
+	\item Las vistas derivadas (\nem{interes\us saldo} e \nem{inversion\us estado}) tambi\'en se otorgan al gerente, al ejecutivo y a la tesorer\'ia.
 	\item Los fragmentos de \nem{bitacora} no se otorgan a ningún rol de operación, ya que solo el auditor puede consultar la bitácora.
 	\item El auditor y el usuario de respaldo los reciben sin otorgamientos adicionales: en PostgreSQL, por los privilegios por defecto definidos en el capítulo~\ref{cap:implementacion}; en MySQL, porque sus privilegios abarcan toda la base de datos (\nem{inversiones.*}).
 \end{itemize}
@@ -95,7 +129,7 @@ Las vistas se definen con \nem{SELECT i.*} en los fragmentos horizontales, ya qu
 
 \section{Diagrama relacional con segmentaci\'on}
 
-Las figuras~\ref{fig:segmentacion-horizontal} y~\ref{fig:segmentacion-vertical} muestran las vistas que se derivan de cada tabla. Las tablas se dibujan con borde continuo y encabezado oscuro, y las vistas con borde punteado y encabezado claro. Las flechas continuas indican de qué tabla obtiene sus datos cada vista; las punteadas, la tabla que se consulta para evaluar su condición. Las demás tablas y relaciones del esquema no cambian respecto al diagrama relacional (figura~\ref{fig:diagrama-er}).
+Las figuras~\ref{fig:segmentacion-horizontal} y~\ref{fig:segmentacion-vertical} muestran las vistas que se derivan de cada tabla. Las tablas se dibujan con borde continuo y encabezado oscuro, y las vistas con borde punteado y encabezado claro. Las flechas continuas indican de qué tabla obtiene sus datos cada vista; las punteadas, la tabla que se consulta para evaluar su condición. Los diagramas muestran los fragmentos; las vistas derivadas se describen en la secci\'on~\ref{sec:segmentacion-derivada}. Las demás tablas y relaciones del esquema no cambian respecto al diagrama relacional (figura~\ref{fig:diagrama-er}).
 
 \captura{segmentacion_horizontal.jpg}{Fragmentación horizontal de \nem{inversion}}{segmentacion-horizontal}
 Las flechas continuas indican el origen de los datos; las punteadas, la tabla que se consulta para evaluar la condición.
@@ -105,7 +139,7 @@ Ambas vistas conservan la llave primaria, que permite reconstruir cada registro.
 
 \section{PostgreSQL}
 
-El DBA crea las vistas en la segunda instancia, con el rol \nem{rol\us admin\us bd} activo para que el rol sea su dueño, igual que el de las tablas. En la misma secuencia otorga los privilegios sobre los fragmentos de \nem{inversion}.
+El DBA crea las vistas en la segunda instancia, con el rol \nem{rol\us admin\us bd} activo para que el rol sea su dueño, igual que el de las tablas. En la misma secuencia otorga los privilegios sobre los fragmentos de \nem{inversion} y sobre las vistas derivadas.
 
 \begin{verbatim}
 	-- Ejecutado por dlandero en la segunda instancia, base de datos inversiones
@@ -134,8 +168,8 @@ El DBA crea las vistas en la segunda instancia, con el rol \nem{rol\us admin\us 
 
 	-- Fragmentación vertical de bitacora
 	CREATE VIEW bitacora_resumen AS
-	SELECT bitacora_num, bitacora_fecha, bitacora_usuario, bitacora_tabla,
-	       bitacora_operacion, bitacora_ip, bitacora_sesion
+	SELECT bitacora_num, bitacora_fecha, bitacora_rol, bitacora_usuario,
+	       bitacora_tabla, bitacora_operacion, bitacora_ip, bitacora_sesion
 	FROM bitacora;
 
 	CREATE VIEW bitacora_detalle AS
@@ -143,14 +177,83 @@ El DBA crea las vistas en la segunda instancia, con el rol \nem{rol\us admin\us 
 	       bitacora_dato_anterior, bitacora_dato_nuevo
 	FROM bitacora;
 
+	-- Segmentación derivada para los objetivos: el cálculo se hace una sola vez
+	-- por periodo de interés y, a partir de él, por inversión
+	CREATE VIEW interes_saldo AS
+	SELECT t.inversion_num, t.interes_num,
+	       t.interes_fecha_inicial, t.interes_fecha_final, t.interes_monto,
+	       COALESCE(SUM(g.pago_interes), 0) AS pagado,
+	       COALESCE(SUM(g.pago_mora), 0)    AS mora_pagada,
+	       t.interes_monto - COALESCE(SUM(g.pago_interes), 0) AS saldo,
+	       CASE WHEN t.interes_fecha_final < CURRENT_DATE
+	                 AND t.interes_monto > COALESCE(SUM(g.pago_interes), 0)
+	            THEN CURRENT_DATE - t.interes_fecha_final
+	            ELSE 0
+	       END AS dias_atraso
+	FROM interes t
+	  LEFT JOIN pago g
+	    ON g.inversion_num = t.inversion_num
+	   AND g.interes_num = t.interes_num
+	GROUP BY t.inversion_num, t.interes_num, t.interes_fecha_inicial,
+	         t.interes_fecha_final, t.interes_monto;
+
+	-- El estado de cada inversión lo da el fragmento al que pertenece
+	CREATE VIEW inversion_estado AS
+	SELECT i.inversion_num, i.pagare_num,
+	       c.cliente_num, c.cliente_rfc,
+	       CONCAT(c.cliente_nombre, ' ', c.cliente_apellido) AS cliente,
+	       s.sucursal_nombre,
+	       i.pagare_fecha AS suscripcion,
+	       i.inversion_fecha_vencimiento AS vencimiento,
+	       i.inversion_capital AS capital,
+	       i.inversion_tasa AS tasa,
+	       COUNT(*) AS plazo_meses,
+	       e.estado,
+	       CASE WHEN e.estado = 'Liquidada' THEN 0
+	            ELSE GREATEST(CURRENT_DATE - i.inversion_fecha_vencimiento, 0)
+	       END AS dias_vencida,
+	       SUM(CASE WHEN v.interes_fecha_final <= CURRENT_DATE
+	                THEN v.interes_monto ELSE 0 END) AS interes_exigible,
+	       SUM(v.pagado) AS interes_pagado,
+	       SUM(CASE WHEN v.interes_fecha_final <= CURRENT_DATE
+	                THEN v.interes_monto ELSE 0 END) - SUM(v.pagado)
+	         AS interes_pendiente,
+	       SUM(CASE WHEN v.dias_atraso > 0 THEN 1 ELSE 0 END)
+	         AS periodos_sin_pagar,
+	       SUM(CASE WHEN v.dias_atraso > 0 THEN v.saldo ELSE 0 END)
+	         AS interes_vencido,
+	       SUM(v.mora_pagada) + COALESCE(l.liquidacion_mora, 0) AS mora_pagada,
+	       COALESCE(l.liquidacion_capital, 0.00) AS capital_devuelto,
+	       CASE WHEN e.estado = 'Liquidada' THEN 0.00
+	            ELSE ROUND(i.inversion_capital * i.inversion_tasa_moratoria / 100
+	                       * GREATEST(CURRENT_DATE
+	                                  - i.inversion_fecha_vencimiento, 0) / 30
+	                       + SUM(v.saldo * i.inversion_tasa_moratoria / 100
+	                             * v.dias_atraso / 30), 2)
+	       END AS mora_estimada
+	FROM (SELECT inversion_num, 'Vigente' AS estado FROM inversion_vigente
+	      UNION ALL
+	      SELECT inversion_num, 'Vencida' FROM inversion_vencida
+	      UNION ALL
+	      SELECT inversion_num, 'Liquidada' FROM inversion_liquidada) e
+	  JOIN inversion i ON i.inversion_num = e.inversion_num
+	  JOIN cliente c   ON c.cliente_num = i.cliente_num
+	  JOIN sucursal s  ON s.sucursal_num = i.sucursal_num
+	  JOIN interes_saldo v ON v.inversion_num = i.inversion_num
+	  LEFT JOIN liquidacion l ON l.inversion_num = i.inversion_num
+	GROUP BY i.inversion_num, c.cliente_num, s.sucursal_num, l.inversion_num,
+	         e.estado;
+
 	-- Privilegios
 	GRANT SELECT ON inversion_vigente, inversion_vencida, inversion_liquidada
+	  TO rol_gerente, rol_ejecutivo, rol_tesoreria;
+	GRANT SELECT ON interes_saldo, inversion_estado
 	  TO rol_gerente, rol_ejecutivo, rol_tesoreria;
 \end{verbatim}
 
 \section{MySQL}
 
-Las vistas tienen la misma definición que en PostgreSQL. Se crean con \nem{DEFINER = CURRENT\us USER} y \nem{SQL SECURITY DEFINER}, de modo que se ejecutan con los privilegios de la cuenta del DBA, igual que los procedimientos y triggers del esquema. Como MySQL solo permite otorgar privilegios sobre un objeto por sentencia, cada fragmento de \nem{inversion} requiere su propio \nem{GRANT}.
+Las vistas tienen la misma definición que en PostgreSQL. Se crean con \nem{DEFINER = CURRENT\us USER} y \nem{SQL SECURITY DEFINER}, de modo que se ejecutan con los privilegios de la cuenta del DBA, igual que los procedimientos y triggers del esquema. Como MySQL solo permite otorgar privilegios sobre un objeto por sentencia, cada fragmento de \nem{inversion} y cada vista derivada requiere su propio \nem{GRANT}.
 
 \begin{verbatim}
 	-- Ejecutado por dlandero en la segunda instancia, base de datos inversiones
@@ -178,8 +281,8 @@ Las vistas tienen la misma definición que en PostgreSQL. Se crean con \nem{DEFI
 
 	-- Fragmentación vertical de bitacora
 	CREATE DEFINER = CURRENT_USER SQL SECURITY DEFINER VIEW bitacora_resumen AS
-	SELECT bitacora_num, bitacora_fecha, bitacora_usuario, bitacora_tabla,
-	       bitacora_operacion, bitacora_ip, bitacora_sesion
+	SELECT bitacora_num, bitacora_fecha, bitacora_rol, bitacora_usuario,
+	       bitacora_tabla, bitacora_operacion, bitacora_ip, bitacora_sesion
 	FROM bitacora;
 
 	CREATE DEFINER = CURRENT_USER SQL SECURITY DEFINER VIEW bitacora_detalle AS
@@ -187,12 +290,84 @@ Las vistas tienen la misma definición que en PostgreSQL. Se crean con \nem{DEFI
 	       bitacora_dato_anterior, bitacora_dato_nuevo
 	FROM bitacora;
 
+	-- Segmentación derivada para los objetivos: el cálculo se hace una sola vez
+	-- por periodo de interés y, a partir de él, por inversión
+	CREATE DEFINER = CURRENT_USER SQL SECURITY DEFINER VIEW interes_saldo AS
+	SELECT t.inversion_num, t.interes_num,
+	       t.interes_fecha_inicial, t.interes_fecha_final, t.interes_monto,
+	       COALESCE(SUM(g.pago_interes), 0) AS pagado,
+	       COALESCE(SUM(g.pago_mora), 0)    AS mora_pagada,
+	       t.interes_monto - COALESCE(SUM(g.pago_interes), 0) AS saldo,
+	       CASE WHEN t.interes_fecha_final < CURRENT_DATE
+	                 AND t.interes_monto > COALESCE(SUM(g.pago_interes), 0)
+	            THEN DATEDIFF(CURRENT_DATE, t.interes_fecha_final)
+	            ELSE 0
+	       END AS dias_atraso
+	FROM interes t
+	  LEFT JOIN pago g
+	    ON g.inversion_num = t.inversion_num
+	   AND g.interes_num = t.interes_num
+	GROUP BY t.inversion_num, t.interes_num, t.interes_fecha_inicial,
+	         t.interes_fecha_final, t.interes_monto;
+
+	-- El estado de cada inversión lo da el fragmento al que pertenece
+	CREATE DEFINER = CURRENT_USER SQL SECURITY DEFINER VIEW inversion_estado AS
+	SELECT i.inversion_num, i.pagare_num,
+	       c.cliente_num, c.cliente_rfc,
+	       CONCAT(c.cliente_nombre, ' ', c.cliente_apellido) AS cliente,
+	       s.sucursal_nombre,
+	       i.pagare_fecha AS suscripcion,
+	       i.inversion_fecha_vencimiento AS vencimiento,
+	       i.inversion_capital AS capital,
+	       i.inversion_tasa AS tasa,
+	       COUNT(*) AS plazo_meses,
+	       e.estado,
+	       CASE WHEN e.estado = 'Liquidada' THEN 0
+	            ELSE GREATEST(DATEDIFF(CURRENT_DATE,
+	                                   i.inversion_fecha_vencimiento), 0)
+	       END AS dias_vencida,
+	       SUM(CASE WHEN v.interes_fecha_final <= CURRENT_DATE
+	                THEN v.interes_monto ELSE 0 END) AS interes_exigible,
+	       SUM(v.pagado) AS interes_pagado,
+	       SUM(CASE WHEN v.interes_fecha_final <= CURRENT_DATE
+	                THEN v.interes_monto ELSE 0 END) - SUM(v.pagado)
+	         AS interes_pendiente,
+	       SUM(CASE WHEN v.dias_atraso > 0 THEN 1 ELSE 0 END)
+	         AS periodos_sin_pagar,
+	       SUM(CASE WHEN v.dias_atraso > 0 THEN v.saldo ELSE 0 END)
+	         AS interes_vencido,
+	       SUM(v.mora_pagada) + COALESCE(l.liquidacion_mora, 0) AS mora_pagada,
+	       COALESCE(l.liquidacion_capital, 0.00) AS capital_devuelto,
+	       CASE WHEN e.estado = 'Liquidada' THEN 0.00
+	            ELSE ROUND(i.inversion_capital * i.inversion_tasa_moratoria / 100
+	                       * GREATEST(DATEDIFF(CURRENT_DATE,
+	                                   i.inversion_fecha_vencimiento), 0) / 30
+	                       + SUM(v.saldo * i.inversion_tasa_moratoria / 100
+	                             * v.dias_atraso / 30), 2)
+	       END AS mora_estimada
+	FROM (SELECT inversion_num, 'Vigente' AS estado FROM inversion_vigente
+	      UNION ALL
+	      SELECT inversion_num, 'Vencida' FROM inversion_vencida
+	      UNION ALL
+	      SELECT inversion_num, 'Liquidada' FROM inversion_liquidada) e
+	  JOIN inversion i ON i.inversion_num = e.inversion_num
+	  JOIN cliente c   ON c.cliente_num = i.cliente_num
+	  JOIN sucursal s  ON s.sucursal_num = i.sucursal_num
+	  JOIN interes_saldo v ON v.inversion_num = i.inversion_num
+	  LEFT JOIN liquidacion l ON l.inversion_num = i.inversion_num
+	GROUP BY i.inversion_num, c.cliente_num, s.sucursal_num, l.inversion_num,
+	         e.estado;
+
 	-- Privilegios
 	GRANT SELECT ON inversiones.inversion_vigente
 	  TO rol_gerente, rol_ejecutivo, rol_tesoreria;
 	GRANT SELECT ON inversiones.inversion_vencida
 	  TO rol_gerente, rol_ejecutivo, rol_tesoreria;
 	GRANT SELECT ON inversiones.inversion_liquidada
+	  TO rol_gerente, rol_ejecutivo, rol_tesoreria;
+	GRANT SELECT ON inversiones.interes_saldo
+	  TO rol_gerente, rol_ejecutivo, rol_tesoreria;
+	GRANT SELECT ON inversiones.inversion_estado
 	  TO rol_gerente, rol_ejecutivo, rol_tesoreria;
 \end{verbatim}
 

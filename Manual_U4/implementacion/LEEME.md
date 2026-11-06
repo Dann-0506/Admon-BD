@@ -13,7 +13,7 @@ Todo el código proviene del manual. Cada archivo indica en su encabezado quién
 | `mysql/` | Igual que `postgresql/`, para MySQL. |
 | `mysql/instancia2/` | Igual que `postgresql/instancia2/`, para MySQL. |
 | `windows/` | Comandos de Windows: directorios, segundas instancias y copia de datos. Se ejecutan en una terminal `cmd` abierta como administrador. |
-| `consultas/` | Consultas de los cinco objetivos, por gestor. Sirven para comprobar que cada instancia quedó bien construida. |
+| `consultas/` | Consultas de los objetivos, por gestor. `objetivo1.sql` y `objetivo4.sql` sirven para las dos instancias; `instancia1/` e `instancia2/` contienen los objetivos 2, 3 y 5 de cada una. Sirven para comprobar que cada instancia quedó bien construida. |
 
 ## Lo que no cubren estos archivos
 
@@ -36,9 +36,29 @@ Las reglas exponen los servidores a los equipos de la subred. PostgreSQL limita 
 
 `windows\99_revertir_path_firewall.cmd` deshace ambos cambios: quita esos directorios de `PATH` y elimina las dos reglas. Si alguno de los directorios ya estaba en `PATH` antes de ejecutar el archivo opcional, también se quita.
 
+## Cuentas y bitácora
+
+Las cuentas administrativas (`dlandero`, `enovoa`, `respaldo`) son personales; las operativas (`op_gerente`, `op_ejecutivo`, `op_tesoreria`) son compartidas por rol. Quien use una cuenta operativa debe identificarse al inicio de **cada transacción** que modifique datos, o el trigger de bitácora rechaza el cambio:
+
+```
+-- PostgreSQL
+BEGIN;
+SET LOCAL inversiones.usuario = 'pzuniga';
+...
+COMMIT;
+
+-- MySQL
+START TRANSACTION;
+SET @usuario = 'pzuniga';
+...
+COMMIT;
+```
+
+La bitácora guarda el rol (`bitacora_rol`), el usuario (`bitacora_usuario`) y la IP (`bitacora_ip`). En MySQL, `mysql\04_root_privilegios.sql` otorga al DBA la lectura de `mysql.role_edges`, de donde se obtiene el rol.
+
 ## Contraseñas
 
-- Los usuarios del sistema usan las contraseñas del manual: `Dlandero#2026`, `Dmejia#2026`, `Pzuniga#2026`, `Xzaleta#2026`, `Enovoa#2026` y `Respaldo#2026`.
+- Las cuentas del sistema usan las contraseñas del manual: `Dlandero#2026`, `Enovoa#2026` y `Respaldo#2026` (administrativas), y `OpGerente#2026`, `OpEjecutivo#2026` y `OpTesoreria#2026` (operativas, compartidas por rol).
 - Las de los superusuarios `postgres` y `root` las define quien instala. En `mysql/00_root_cuentas_loopback.sql`, sustituye `********` por la contraseña de `root` antes de ejecutarlo.
 - `windows/03_mysql_instancia2.cmd` pide la contraseña de `root` de la segunda instancia. No debe contener los caracteres `& | < > ^ %`, que la terminal interpreta.
 
@@ -135,14 +155,19 @@ Requisito: la primera instancia completa, con su `my.ini` definitivo. No se ejec
 
 ## Comprobación
 
-Ejecuta las cinco consultas de `consultas\` en cada instancia, con `dmejia` o cualquier rol de operación. Las cuatro instancias deben devolver los mismos datos; solo cambia la presentación de cada cliente.
+Ejecuta las consultas de `consultas\` en cada instancia, con `op_gerente` o cualquier cuenta de operación:
+
+- Primera instancia (puertos 5432 y 3306): `objetivo1.sql`, `objetivo4.sql` y los de `instancia1\`.
+- Segunda instancia (puertos 5434 y 3308): `objetivo1.sql`, `objetivo4.sql` y los de `instancia2\`. Estos usan las vistas de la segmentación (`interes_saldo` e `inversion_estado`, creadas por `instancia2\30_dba_segmentacion.sql`).
+
+Las dos versiones de los objetivos 2, 3 y 5 devuelven los mismos datos (los cálculos usan la fecha del sistema); solo cambia la presentación de cada cliente.
 
 | Objetivo | Resultado esperado |
 |---|---|
 | 1 | Un renglón: cliente 1, José Luis Hernández García, 1 inversión, 75000.00 |
-| 2 | Inversiones 16, 18, 20 y 17, con dos periodos sin pagar cada una; mora estimada de la 16: 203506.25 |
+| 2 | Inversiones 16, 18, 20 y 17, con dos periodos sin pagar cada una. Los días vencida y la mora estimada dependen de la fecha en que se consulta |
 | 3 | Inversión 10, liquidada, mora pagada 1250.00; inversión 35, vigente, mora pagada 7.50 |
-| 4 | Pagaré `0018/2024`, inversión 21, sin aval; 10 periodos: uno pagado con atraso, siete pagados y dos vencidos |
+| 4 | Pagaré `0018/2024`, inversión 21, sin aval; 10 periodos (6 a 15): el 6 con dos pagos y el último posterior a su fecha final, los periodos 7 a 13 pagados y los periodos 14 y 15 con saldo de 1700.00 |
 | 5 | Inversiones 36 a 40, todas vigentes |
 
 La carga deja 25 clientes, 40 inversiones, 639 periodos de interés, 478 pagos, 15 liquidaciones y la bitácora vacía.

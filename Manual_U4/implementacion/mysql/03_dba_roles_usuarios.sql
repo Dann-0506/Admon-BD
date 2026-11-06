@@ -9,12 +9,15 @@ SET NAMES utf8mb4;
 CREATE ROLE rol_gerente, rol_ejecutivo, rol_tesoreria,
             rol_auditor, rol_respaldo;
 
-CREATE USER 'dmejia'@'%'   IDENTIFIED BY 'Dmejia#2026'
+-- Cuentas compartidas de operación (una por rol)
+CREATE USER 'op_gerente'@'%'   IDENTIFIED BY 'OpGerente#2026'
   DEFAULT ROLE rol_gerente;
-CREATE USER 'pzuniga'@'%'  IDENTIFIED BY 'Pzuniga#2026'
+CREATE USER 'op_ejecutivo'@'%' IDENTIFIED BY 'OpEjecutivo#2026'
   DEFAULT ROLE rol_ejecutivo;
-CREATE USER 'xzaleta'@'%'  IDENTIFIED BY 'Xzaleta#2026'
+CREATE USER 'op_tesoreria'@'%' IDENTIFIED BY 'OpTesoreria#2026'
   DEFAULT ROLE rol_tesoreria;
+
+-- Cuentas administrativas (una por persona o herramienta)
 CREATE USER 'enovoa'@'%'   IDENTIFIED BY 'Enovoa#2026'
   DEFAULT ROLE rol_auditor;
 CREATE USER 'respaldo'@'%' IDENTIFIED BY 'Respaldo#2026'

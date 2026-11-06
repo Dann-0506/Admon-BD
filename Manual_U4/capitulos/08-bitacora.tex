@@ -1,7 +1,7 @@
 \chapter{Bitácora}
 \label{cap:bitacora}
 
-La bitácora registra cada cambio efectivo en los datos del sistema: qué usuario lo hizo, cuándo, desde qué equipo, en qué tabla, con qué operación y cuáles eran los valores antes y después del cambio. Cubre las ocho tablas de datos del esquema; la propia \nem{bitacora} no se audita a sí misma. Su propósito es que el auditor pueda reconstruir la historia de cualquier registro, en particular de los montos de inversiones, pagos y liquidaciones, sin depender de la palabra de quien hizo el cambio.
+La bitácora registra cada cambio efectivo en los datos del sistema: con qué rol y qué usuario lo hizo, cuándo, desde qué equipo, en qué tabla, con qué operación y cuáles eran los valores antes y después del cambio. Cubre las ocho tablas de datos del esquema; la propia \nem{bitacora} no se audita a sí misma. Su propósito es que el auditor pueda reconstruir la historia de cualquier registro, en particular de los montos de inversiones, pagos y liquidaciones, sin depender de la palabra de quien hizo el cambio.
 
 \section{Diseño de la bitácora}
 
@@ -9,7 +9,13 @@ La bitácora registra cada cambio efectivo en los datos del sistema: qué usuari
 
 \paragraph{Misma transacción.} El registro de bitácora forma parte de la transacción que hizo el cambio. Si la transacción se revierte, el registro también desaparece, de modo que la bitácora no contiene cambios que nunca ocurrieron. Los intentos rechazados quedan en el registro del servidor configurado en el capítulo~\ref{cap:entorno} (ver tabla~\ref{tab:bitacora-registro}).
 
-\paragraph{Usuario de la sesión.} Los triggers de bitácora se ejecutan con los permisos del dueño de los objetos (\nem{SECURITY DEFINER} en PostgreSQL y \nem{DEFINER} en MySQL). Por eso el usuario se obtiene de la sesión, y no del contexto de ejecución, que siempre sería el del DBA. Lo mismo ocurre con el procedimiento \nem{generar\us tabla\us interes}: los periodos que crea quedan registrados a nombre del ejecutivo que lo llamó.
+\paragraph{Rol, usuario e IP.} Los triggers de bitácora se ejecutan con los permisos del dueño de los objetos (\nem{SECURITY DEFINER} en PostgreSQL y \nem{DEFINER} en MySQL). Por eso la identidad se obtiene de la sesión, y no del contexto de ejecución, que siempre sería el del DBA. Lo mismo ocurre con el procedimiento \nem{generar\us tabla\us interes}: los periodos que crea quedan registrados a nombre del ejecutivo que lo llamó. Cada registro guarda tres datos de identidad:
+\begin{itemize}
+	\item \textbf{Rol} (\nem{bitacora\us rol}). El rol del sistema al que pertenece la cuenta que inició la sesión. Lo determina el gestor a partir de la cuenta, por lo que no puede declararse ni falsificarse.
+	\item \textbf{Usuario} (\nem{bitacora\us usuario}). La persona que realizó el cambio. En las cuentas operativas, que son compartidas por todos los titulares de un rol, es el nombre declarado con \nem{SET} al inicio de la transacción (sección~\ref{sec:identificacion}); si no se declaró, el trigger rechaza el cambio. En las cuentas administrativas, que son dedicadas, es el nombre de la cuenta.
+	\item \textbf{IP} (\nem{bitacora\us ip}). La dirección desde la que se conectó el cliente, que también proviene del gestor.
+\end{itemize}
+Los tres datos son complementarios: el rol acota qué pudo hacer quien actuó, el usuario indica quién fue, y la IP, desde dónde. Una cuenta compartida usada desde un equipo ajeno al de su titular, o un nombre declarado que no corresponde al rol, son señales que el auditor puede detectar al cruzar las columnas.
 
 \paragraph{Valores en JSON.} Los valores anteriores y nuevos se guardan como un objeto JSON con todas las columnas del renglón. Una sola tabla de bitácora sirve así para las ocho tablas, sin una columna por cada atributo auditado. En una inserción solo hay valor nuevo y en una eliminación solo valor anterior.
 
@@ -26,7 +32,8 @@ La tabla~\ref{tab:bitacora-campos} indica de dónde obtiene cada gestor el valor
 		\midrule
 		\nem{bitacora\us num} & Identidad & \nem{AUTO\us INCREMENT} \\
 		\nem{bitacora\us fecha} & \nem{LOCALTIMESTAMP} & \nem{NOW()} \\
-		\nem{bitacora\us usuario} & \nem{session\us user} & Parte del usuario de \nem{USER()} \\
+		\nem{bitacora\us rol} & Rol del que \nem{session\us user} es miembro (\nem{pg\us auth\us members}) & Rol de la cuenta de \nem{USER()} en \nem{mysql.role\us edges} \\
+		\nem{bitacora\us usuario} & Cuentas operativas: \nem{inversiones.usuario}; administrativas: \nem{session\us user} & Cuentas operativas: \nem{@usuario}; administrativas: cuenta de \nem{USER()} \\
 		\nem{bitacora\us tabla} & \nem{TG\us TABLE\us NAME} & Literal en cada trigger \\
 		\nem{bitacora\us operacion} & \nem{TG\us OP} & Literal en cada trigger \\
 		\nem{bitacora\us ip} & \nem{inet\us client\us addr()} & Parte del equipo de \nem{USER()} \\
@@ -39,6 +46,8 @@ La tabla~\ref{tab:bitacora-campos} indica de dónde obtiene cada gestor el valor
 \end{table}
 
 En MySQL, \nem{USER()} devuelve el usuario y el equipo con los que el cliente se autenticó, a diferencia de \nem{CURRENT\us USER()}, que dentro de un trigger devuelve el \nem{DEFINER}. Como el servidor no resuelve nombres (\nem{skip\us name\us resolve}), el equipo es la dirección IP del cliente.
+
+En PostgreSQL, el rol se busca entre las membresías de \nem{session\us user} cuyo nombre empieza con \nem{rol\us}. En MySQL, \nem{mysql.role\us edges} guarda los roles concedidos a cada cuenta; la consulta de esa tabla es un privilegio de instancia que otorga el superusuario al DBA, como el de \nem{performance\us schema.threads}.
 
 \paragraph{Bitácora y registro del servidor.} La bitácora no sustituye al registro del servidor configurado en el capítulo~\ref{cap:entorno}; se complementan, como muestra la tabla~\ref{tab:bitacora-registro}.
 
@@ -83,12 +92,36 @@ La sentencia \nem{TRUNCATE} no activa los triggers por renglón, así que la bit
 	SECURITY DEFINER
 	SET search_path = inversiones
 	AS $$
+	DECLARE
+	  v_rol     VARCHAR(63);
+	  v_usuario VARCHAR(100);
 	BEGIN
-	  INSERT INTO bitacora (bitacora_fecha, bitacora_usuario, bitacora_tabla,
-	                        bitacora_operacion, bitacora_ip, bitacora_sesion,
-	                        bitacora_query, bitacora_dato_anterior,
-	                        bitacora_dato_nuevo)
-	  VALUES (LOCALTIMESTAMP, session_user, TG_TABLE_NAME, TG_OP,
+	  -- Rol del sistema al que pertenece la cuenta que inició la sesión
+	  SELECT r.rolname INTO v_rol
+	  FROM pg_auth_members m
+	  JOIN pg_roles r ON r.oid = m.roleid
+	  WHERE m.member = (SELECT oid FROM pg_roles WHERE rolname = session_user)
+	    AND r.rolname LIKE 'rol\_%';
+	  v_rol := COALESCE(v_rol, 'sin_rol');
+
+	  IF v_rol IN ('rol_gerente', 'rol_ejecutivo', 'rol_tesoreria') THEN
+	    -- Cuenta compartida: la persona se identifica con SET LOCAL
+	    v_usuario := NULLIF(btrim(
+	                   current_setting('inversiones.usuario', true)), '');
+	    IF v_usuario IS NULL THEN
+	      RAISE EXCEPTION
+	        'Falta SET LOCAL inversiones.usuario al inicio de la transacción';
+	    END IF;
+	  ELSE
+	    -- Cuenta administrativa: la cuenta identifica a la persona
+	    v_usuario := session_user;
+	  END IF;
+
+	  INSERT INTO bitacora (bitacora_fecha, bitacora_rol, bitacora_usuario,
+	                        bitacora_tabla, bitacora_operacion, bitacora_ip,
+	                        bitacora_sesion, bitacora_query,
+	                        bitacora_dato_anterior, bitacora_dato_nuevo)
+	  VALUES (LOCALTIMESTAMP, v_rol, v_usuario, TG_TABLE_NAME, TG_OP,
 	          host(inet_client_addr()), pg_backend_pid(), current_query(),
 	          CASE WHEN TG_OP IN ('UPDATE', 'DELETE') THEN to_jsonb(OLD) END,
 	          CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN to_jsonb(NEW) END);
@@ -149,35 +182,68 @@ La sentencia \nem{TRUNCATE} no activa los triggers por renglón, así que la bit
 
 \section{MySQL}
 
-MySQL requiere un trigger por cada operación y no puede convertir un renglón completo a JSON, por lo que cada trigger enumera las columnas de su tabla con \nem{JSON\us OBJECT}. Para no repetir en los 24 triggers la obtención del usuario, el equipo, la sesión y la sentencia, los triggers llaman a un procedimiento, \nem{registrar\us bitacora}, que hace la inserción. Los triggers y el procedimiento se ejecutan con los permisos de su \nem{DEFINER}, el DBA. Ningún rol tiene \nem{EXECUTE} sobre \nem{registrar\us bitacora}, de modo que los usuarios no pueden llamarlo directamente.
+MySQL requiere un trigger por cada operación y no puede convertir un renglón completo a JSON, por lo que cada trigger enumera las columnas de su tabla con \nem{JSON\us OBJECT}. Para no repetir en los 24 triggers la obtención del usuario, el equipo, la sesión y la sentencia, los triggers llaman a un procedimiento, \nem{registrar\us bitacora}, que hace la inserción. Los triggers y el procedimiento se ejecutan con los permisos de su \nem{DEFINER}, el DBA. Como el cuerpo del procedimiento tiene varias sentencias, se define entre \nem{DELIMITER}, igual que los demás procedimientos del esquema. Ningún rol tiene \nem{EXECUTE} sobre \nem{registrar\us bitacora}, de modo que los usuarios no pueden llamarlo directamente.
 
-MySQL no tiene una función equivalente a \nem{current\us query()}. La sentencia que ejecuta cada conexión se obtiene de la columna \nem{PROCESSLIST\us INFO} de la tabla \nem{performance\us schema.\allowbreak threads}, buscando la conexión actual con \nem{CONNECTION\us ID()}. Esta tabla está disponible porque \nem{performance\us schema} se mantiene activado, que es su valor por defecto. Ese esquema está fuera de la base de datos \nem{inversiones}, así que el permiso de consulta lo otorga el superusuario:
+MySQL no tiene una función equivalente a \nem{current\us query()}. La sentencia que ejecuta cada conexión se obtiene de la columna \nem{PROCESSLIST\us INFO} de la tabla \nem{performance\us schema.\allowbreak threads}, buscando la conexión actual con \nem{CONNECTION\us ID()}. Esta tabla está disponible porque \nem{performance\us schema} se mantiene activado, que es su valor por defecto. Ese esquema, y el esquema \nem{mysql} del que se obtiene el rol, están fuera de la base de datos \nem{inversiones}, así que el permiso de consulta lo otorga el superusuario:
 
 \begin{verbatim}
 	-- Ejecutado por root
 	GRANT SELECT ON performance_schema.threads TO rol_admin_bd;
+	GRANT SELECT ON mysql.role_edges TO rol_admin_bd;
 \end{verbatim}
 
 Hay dos diferencias con PostgreSQL. Primero, las acciones en cascada de las llaves foráneas no activan triggers en MySQL. Si cambia el RFC de la empresa, la bitácora registra la actualización de \nem{empresa}, pero no la de cada sucursal que se actualiza en cascada. Segundo, la sentencia \nem{TRUNCATE} requiere el privilegio \nem{DROP}, que solo tiene el DBA, y queda en el registro general del servidor.
 
 \begin{verbatim}
 	-- Ejecutado por dlandero en la base de datos inversiones
+	DELIMITER //
+
 	CREATE DEFINER = CURRENT_USER PROCEDURE registrar_bitacora(
 	  IN p_tabla     VARCHAR(63),
 	  IN p_operacion VARCHAR(6),
 	  IN p_anterior  JSON,
 	  IN p_nuevo     JSON)
 	SQL SECURITY DEFINER
-	INSERT INTO bitacora (bitacora_fecha, bitacora_usuario, bitacora_tabla,
-	                      bitacora_operacion, bitacora_ip, bitacora_sesion,
-	                      bitacora_query, bitacora_dato_anterior,
-	                      bitacora_dato_nuevo)
-	VALUES (NOW(), SUBSTRING_INDEX(USER(), '@', 1), p_tabla, p_operacion,
-	        SUBSTRING_INDEX(USER(), '@', -1), CONNECTION_ID(),
-	        (SELECT PROCESSLIST_INFO
-	         FROM performance_schema.threads
-	         WHERE PROCESSLIST_ID = CONNECTION_ID()),
-	        p_anterior, p_nuevo);
+	MODIFIES SQL DATA
+	BEGIN
+	  DECLARE v_cuenta  VARCHAR(100);
+	  DECLARE v_rol     VARCHAR(63);
+	  DECLARE v_usuario VARCHAR(100);
+
+	  SET v_cuenta = SUBSTRING_INDEX(USER(), '@', 1);
+
+	  -- Rol del sistema al que pertenece la cuenta que inició la sesión
+	  SET v_rol = COALESCE(
+	    (SELECT FROM_USER FROM mysql.role_edges
+	     WHERE TO_USER = v_cuenta AND FROM_USER LIKE 'rol\\_%'
+	     LIMIT 1),
+	    'sin_rol');
+
+	  IF v_rol IN ('rol_gerente', 'rol_ejecutivo', 'rol_tesoreria') THEN
+	    -- Cuenta compartida: la persona se identifica con SET @usuario
+	    SET v_usuario = NULLIF(TRIM(@usuario), '');
+	    IF v_usuario IS NULL THEN
+	      SIGNAL SQLSTATE '45000'
+	        SET MESSAGE_TEXT = 'Falta SET @usuario al inicio de la transacción';
+	    END IF;
+	  ELSE
+	    -- Cuenta administrativa: la cuenta identifica a la persona
+	    SET v_usuario = v_cuenta;
+	  END IF;
+
+	  INSERT INTO bitacora (bitacora_fecha, bitacora_rol, bitacora_usuario,
+	                        bitacora_tabla, bitacora_operacion, bitacora_ip,
+	                        bitacora_sesion, bitacora_query,
+	                        bitacora_dato_anterior, bitacora_dato_nuevo)
+	  VALUES (NOW(), v_rol, v_usuario, p_tabla, p_operacion,
+	          SUBSTRING_INDEX(USER(), '@', -1), CONNECTION_ID(),
+	          (SELECT PROCESSLIST_INFO
+	           FROM performance_schema.threads
+	           WHERE PROCESSLIST_ID = CONNECTION_ID()),
+	          p_anterior, p_nuevo);
+	END //
+
+	DELIMITER ;
 
 	-- empresa
 	CREATE TRIGGER trg_empresa_bitacora_ins AFTER INSERT ON empresa
@@ -372,6 +438,7 @@ Hay dos diferencias con PostgreSQL. Primero, las acciones en cascada de las llav
 	FOR EACH ROW CALL registrar_bitacora('interes', 'INSERT',
 	  NULL,
 	  JSON_OBJECT('inversion_num', NEW.inversion_num,
+	              'interes_num', NEW.interes_num,
 	              'interes_fecha_inicial', NEW.interes_fecha_inicial,
 	              'interes_fecha_final', NEW.interes_fecha_final,
 	              'interes_monto', NEW.interes_monto));
@@ -379,10 +446,12 @@ Hay dos diferencias con PostgreSQL. Primero, las acciones en cascada de las llav
 	CREATE TRIGGER trg_interes_bitacora_upd AFTER UPDATE ON interes
 	FOR EACH ROW CALL registrar_bitacora('interes', 'UPDATE',
 	  JSON_OBJECT('inversion_num', OLD.inversion_num,
+	              'interes_num', OLD.interes_num,
 	              'interes_fecha_inicial', OLD.interes_fecha_inicial,
 	              'interes_fecha_final', OLD.interes_fecha_final,
 	              'interes_monto', OLD.interes_monto),
 	  JSON_OBJECT('inversion_num', NEW.inversion_num,
+	              'interes_num', NEW.interes_num,
 	              'interes_fecha_inicial', NEW.interes_fecha_inicial,
 	              'interes_fecha_final', NEW.interes_fecha_final,
 	              'interes_monto', NEW.interes_monto));
@@ -390,6 +459,7 @@ Hay dos diferencias con PostgreSQL. Primero, las acciones en cascada de las llav
 	CREATE TRIGGER trg_interes_bitacora_del AFTER DELETE ON interes
 	FOR EACH ROW CALL registrar_bitacora('interes', 'DELETE',
 	  JSON_OBJECT('inversion_num', OLD.inversion_num,
+	              'interes_num', OLD.interes_num,
 	              'interes_fecha_inicial', OLD.interes_fecha_inicial,
 	              'interes_fecha_final', OLD.interes_fecha_final,
 	              'interes_monto', OLD.interes_monto),
@@ -400,7 +470,7 @@ Hay dos diferencias con PostgreSQL. Primero, las acciones en cascada de las llav
 	FOR EACH ROW CALL registrar_bitacora('pago', 'INSERT',
 	  NULL,
 	  JSON_OBJECT('inversion_num', NEW.inversion_num,
-	              'interes_fecha_inicial', NEW.interes_fecha_inicial,
+	              'interes_num', NEW.interes_num,
 	              'pago_fecha', NEW.pago_fecha,
 	              'pago_interes', NEW.pago_interes,
 	              'pago_mora', NEW.pago_mora));
@@ -408,12 +478,12 @@ Hay dos diferencias con PostgreSQL. Primero, las acciones en cascada de las llav
 	CREATE TRIGGER trg_pago_bitacora_upd AFTER UPDATE ON pago
 	FOR EACH ROW CALL registrar_bitacora('pago', 'UPDATE',
 	  JSON_OBJECT('inversion_num', OLD.inversion_num,
-	              'interes_fecha_inicial', OLD.interes_fecha_inicial,
+	              'interes_num', OLD.interes_num,
 	              'pago_fecha', OLD.pago_fecha,
 	              'pago_interes', OLD.pago_interes,
 	              'pago_mora', OLD.pago_mora),
 	  JSON_OBJECT('inversion_num', NEW.inversion_num,
-	              'interes_fecha_inicial', NEW.interes_fecha_inicial,
+	              'interes_num', NEW.interes_num,
 	              'pago_fecha', NEW.pago_fecha,
 	              'pago_interes', NEW.pago_interes,
 	              'pago_mora', NEW.pago_mora));
@@ -421,7 +491,7 @@ Hay dos diferencias con PostgreSQL. Primero, las acciones en cascada de las llav
 	CREATE TRIGGER trg_pago_bitacora_del AFTER DELETE ON pago
 	FOR EACH ROW CALL registrar_bitacora('pago', 'DELETE',
 	  JSON_OBJECT('inversion_num', OLD.inversion_num,
-	              'interes_fecha_inicial', OLD.interes_fecha_inicial,
+	              'interes_num', OLD.interes_num,
 	              'pago_fecha', OLD.pago_fecha,
 	              'pago_interes', OLD.pago_interes,
 	              'pago_mora', OLD.pago_mora),

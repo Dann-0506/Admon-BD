@@ -257,10 +257,10 @@ SELECT inversion_num,
 FROM inversion
 WHERE inversion_num BETWEEN 1 AND 15;
 
-INSERT INTO pago (inversion_num, interes_fecha_inicial, pago_fecha,
+INSERT INTO pago (inversion_num, interes_num, pago_fecha,
                   pago_interes, pago_mora)
 WITH periodo AS (
-  SELECT i.inversion_num, i.interes_fecha_inicial,
+  SELECT i.inversion_num, i.interes_num,
          i.interes_fecha_final AS fin, i.interes_monto AS monto,
          v.inversion_tasa_moratoria AS tasa_mor,
          (v.inversion_num % 4 = 0 AND
@@ -278,24 +278,24 @@ WITH periodo AS (
                  v.inversion_fecha_vencimiento - INTERVAL '2 months')
 )
 -- Pago completo en la fecha de pago
-SELECT inversion_num, interes_fecha_inicial, fin, monto, 0
+SELECT inversion_num, interes_num, fin, monto, 0
 FROM periodo
 WHERE NOT tardio AND NOT parcial
 UNION ALL
 -- Pago tardío: 10 días de atraso
-SELECT inversion_num, interes_fecha_inicial, fin + 10, monto,
+SELECT inversion_num, interes_num, fin + 10, monto,
        ROUND(monto * tasa_mor / 100 * 10 / 30, 2)
 FROM periodo
 WHERE tardio
 UNION ALL
 -- Pago parcial: 60 % en la fecha de pago
-SELECT inversion_num, interes_fecha_inicial, fin,
+SELECT inversion_num, interes_num, fin,
        ROUND(monto * 0.6, 2), 0
 FROM periodo
 WHERE parcial AND NOT tardio
 UNION ALL
 -- Resto del pago parcial: 15 días de atraso
-SELECT inversion_num, interes_fecha_inicial, fin + 15,
+SELECT inversion_num, interes_num, fin + 15,
        monto - ROUND(monto * 0.6, 2),
        ROUND((monto - ROUND(monto * 0.6, 2)) * tasa_mor / 100 * 15 / 30, 2)
 FROM periodo

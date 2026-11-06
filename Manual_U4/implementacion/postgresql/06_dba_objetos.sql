@@ -18,6 +18,7 @@ DECLARE
   v_monto  NUMERIC(14,2);
   v_inicio DATE;
   v_fin    DATE;
+  v_num    INT := 0;
 BEGIN
   SELECT * INTO v FROM inversion WHERE inversion_num = p_inversion_num;
   IF NOT FOUND THEN
@@ -39,9 +40,10 @@ BEGIN
   END IF;
 
   WHILE v_fin <= v.inversion_fecha_vencimiento LOOP
-    INSERT INTO interes (inversion_num, interes_fecha_inicial,
+    v_num := v_num + 1;
+    INSERT INTO interes (inversion_num, interes_num, interes_fecha_inicial,
                          interes_fecha_final, interes_monto)
-    VALUES (p_inversion_num, v_inicio, v_fin, v_monto);
+    VALUES (p_inversion_num, v_num, v_inicio, v_fin, v_monto);
     v_inicio := v_fin;
     v_fin    := (v_fin + INTERVAL '1 month')::DATE;
   END LOOP;

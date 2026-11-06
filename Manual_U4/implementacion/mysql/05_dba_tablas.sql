@@ -87,10 +87,13 @@ CREATE TABLE inversion (
 
 CREATE TABLE interes (
   inversion_num          INT           NOT NULL,
+  interes_num            INT           NOT NULL,
   interes_fecha_inicial  DATE          NOT NULL,
   interes_fecha_final    DATE          NOT NULL,
   interes_monto          DECIMAL(14,2) NOT NULL,
-  CONSTRAINT pk_interes PRIMARY KEY (inversion_num, interes_fecha_inicial),
+  CONSTRAINT pk_interes PRIMARY KEY (inversion_num, interes_num),
+  CONSTRAINT ak_interes_fecha
+    UNIQUE (inversion_num, interes_fecha_inicial),
   CONSTRAINT fk_interes_inversion FOREIGN KEY (inversion_num)
     REFERENCES inversion (inversion_num)
     ON DELETE RESTRICT ON UPDATE RESTRICT,
@@ -101,14 +104,14 @@ CREATE TABLE interes (
 
 CREATE TABLE pago (
   inversion_num          INT           NOT NULL,
-  interes_fecha_inicial  DATE          NOT NULL,
+  interes_num            INT           NOT NULL,
   pago_fecha             DATE          NOT NULL,
   pago_interes           DECIMAL(14,2) NOT NULL,
   pago_mora              DECIMAL(14,2) NOT NULL DEFAULT 0,
   CONSTRAINT pk_pago
-    PRIMARY KEY (inversion_num, interes_fecha_inicial, pago_fecha),
-  CONSTRAINT fk_pago_interes FOREIGN KEY (inversion_num, interes_fecha_inicial)
-    REFERENCES interes (inversion_num, interes_fecha_inicial)
+    PRIMARY KEY (inversion_num, interes_num, pago_fecha),
+  CONSTRAINT fk_pago_interes FOREIGN KEY (inversion_num, interes_num)
+    REFERENCES interes (inversion_num, interes_num)
     ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT ck_pago_montos CHECK (pago_interes >= 0 AND pago_mora >= 0)
 ) ENGINE = InnoDB;
@@ -129,6 +132,7 @@ CREATE TABLE liquidacion (
 CREATE TABLE bitacora (
   bitacora_num            BIGINT       NOT NULL AUTO_INCREMENT,
   bitacora_fecha          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  bitacora_rol            VARCHAR(63)  NOT NULL,
   bitacora_usuario        VARCHAR(100) NOT NULL,
   bitacora_tabla          VARCHAR(63)  NOT NULL,
   bitacora_operacion      VARCHAR(6)   NOT NULL,

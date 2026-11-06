@@ -7,22 +7,54 @@
 
 SET NAMES utf8mb4;
 -- Ejecutado por dlandero en la base de datos inversiones
+DELIMITER //
+
 CREATE DEFINER = CURRENT_USER PROCEDURE registrar_bitacora(
   IN p_tabla     VARCHAR(63),
   IN p_operacion VARCHAR(6),
   IN p_anterior  JSON,
   IN p_nuevo     JSON)
 SQL SECURITY DEFINER
-INSERT INTO bitacora (bitacora_fecha, bitacora_usuario, bitacora_tabla,
-                      bitacora_operacion, bitacora_ip, bitacora_sesion,
-                      bitacora_query, bitacora_dato_anterior,
-                      bitacora_dato_nuevo)
-VALUES (NOW(), SUBSTRING_INDEX(USER(), '@', 1), p_tabla, p_operacion,
-        SUBSTRING_INDEX(USER(), '@', -1), CONNECTION_ID(),
-        (SELECT PROCESSLIST_INFO
-         FROM performance_schema.threads
-         WHERE PROCESSLIST_ID = CONNECTION_ID()),
-        p_anterior, p_nuevo);
+MODIFIES SQL DATA
+BEGIN
+  DECLARE v_cuenta  VARCHAR(100);
+  DECLARE v_rol     VARCHAR(63);
+  DECLARE v_usuario VARCHAR(100);
+
+  SET v_cuenta = SUBSTRING_INDEX(USER(), '@', 1);
+
+  -- Rol del sistema al que pertenece la cuenta que inició la sesión
+  SET v_rol = COALESCE(
+    (SELECT FROM_USER FROM mysql.role_edges
+     WHERE TO_USER = v_cuenta AND FROM_USER LIKE 'rol\\_%'
+     LIMIT 1),
+    'sin_rol');
+
+  IF v_rol IN ('rol_gerente', 'rol_ejecutivo', 'rol_tesoreria') THEN
+    -- Cuenta compartida: la persona se identifica con SET @usuario
+    SET v_usuario = NULLIF(TRIM(@usuario), '');
+    IF v_usuario IS NULL THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Falta SET @usuario al inicio de la transacción';
+    END IF;
+  ELSE
+    -- Cuenta administrativa: la cuenta identifica a la persona
+    SET v_usuario = v_cuenta;
+  END IF;
+
+  INSERT INTO bitacora (bitacora_fecha, bitacora_rol, bitacora_usuario,
+                        bitacora_tabla, bitacora_operacion, bitacora_ip,
+                        bitacora_sesion, bitacora_query,
+                        bitacora_dato_anterior, bitacora_dato_nuevo)
+  VALUES (NOW(), v_rol, v_usuario, p_tabla, p_operacion,
+          SUBSTRING_INDEX(USER(), '@', -1), CONNECTION_ID(),
+          (SELECT PROCESSLIST_INFO
+           FROM performance_schema.threads
+           WHERE PROCESSLIST_ID = CONNECTION_ID()),
+          p_anterior, p_nuevo);
+END //
+
+DELIMITER ;
 
 -- empresa
 CREATE TRIGGER trg_empresa_bitacora_ins AFTER INSERT ON empresa
@@ -217,6 +249,7 @@ CREATE TRIGGER trg_interes_bitacora_ins AFTER INSERT ON interes
 FOR EACH ROW CALL registrar_bitacora('interes', 'INSERT',
   NULL,
   JSON_OBJECT('inversion_num', NEW.inversion_num,
+              'interes_num', NEW.interes_num,
               'interes_fecha_inicial', NEW.interes_fecha_inicial,
               'interes_fecha_final', NEW.interes_fecha_final,
               'interes_monto', NEW.interes_monto));
@@ -224,10 +257,12 @@ FOR EACH ROW CALL registrar_bitacora('interes', 'INSERT',
 CREATE TRIGGER trg_interes_bitacora_upd AFTER UPDATE ON interes
 FOR EACH ROW CALL registrar_bitacora('interes', 'UPDATE',
   JSON_OBJECT('inversion_num', OLD.inversion_num,
+              'interes_num', OLD.interes_num,
               'interes_fecha_inicial', OLD.interes_fecha_inicial,
               'interes_fecha_final', OLD.interes_fecha_final,
               'interes_monto', OLD.interes_monto),
   JSON_OBJECT('inversion_num', NEW.inversion_num,
+              'interes_num', NEW.interes_num,
               'interes_fecha_inicial', NEW.interes_fecha_inicial,
               'interes_fecha_final', NEW.interes_fecha_final,
               'interes_monto', NEW.interes_monto));
@@ -235,6 +270,7 @@ FOR EACH ROW CALL registrar_bitacora('interes', 'UPDATE',
 CREATE TRIGGER trg_interes_bitacora_del AFTER DELETE ON interes
 FOR EACH ROW CALL registrar_bitacora('interes', 'DELETE',
   JSON_OBJECT('inversion_num', OLD.inversion_num,
+              'interes_num', OLD.interes_num,
               'interes_fecha_inicial', OLD.interes_fecha_inicial,
               'interes_fecha_final', OLD.interes_fecha_final,
               'interes_monto', OLD.interes_monto),
@@ -245,7 +281,7 @@ CREATE TRIGGER trg_pago_bitacora_ins AFTER INSERT ON pago
 FOR EACH ROW CALL registrar_bitacora('pago', 'INSERT',
   NULL,
   JSON_OBJECT('inversion_num', NEW.inversion_num,
-              'interes_fecha_inicial', NEW.interes_fecha_inicial,
+              'interes_num', NEW.interes_num,
               'pago_fecha', NEW.pago_fecha,
               'pago_interes', NEW.pago_interes,
               'pago_mora', NEW.pago_mora));
@@ -253,12 +289,12 @@ FOR EACH ROW CALL registrar_bitacora('pago', 'INSERT',
 CREATE TRIGGER trg_pago_bitacora_upd AFTER UPDATE ON pago
 FOR EACH ROW CALL registrar_bitacora('pago', 'UPDATE',
   JSON_OBJECT('inversion_num', OLD.inversion_num,
-              'interes_fecha_inicial', OLD.interes_fecha_inicial,
+              'interes_num', OLD.interes_num,
               'pago_fecha', OLD.pago_fecha,
               'pago_interes', OLD.pago_interes,
               'pago_mora', OLD.pago_mora),
   JSON_OBJECT('inversion_num', NEW.inversion_num,
-              'interes_fecha_inicial', NEW.interes_fecha_inicial,
+              'interes_num', NEW.interes_num,
               'pago_fecha', NEW.pago_fecha,
               'pago_interes', NEW.pago_interes,
               'pago_mora', NEW.pago_mora));
@@ -266,7 +302,7 @@ FOR EACH ROW CALL registrar_bitacora('pago', 'UPDATE',
 CREATE TRIGGER trg_pago_bitacora_del AFTER DELETE ON pago
 FOR EACH ROW CALL registrar_bitacora('pago', 'DELETE',
   JSON_OBJECT('inversion_num', OLD.inversion_num,
-              'interes_fecha_inicial', OLD.interes_fecha_inicial,
+              'interes_num', OLD.interes_num,
               'pago_fecha', OLD.pago_fecha,
               'pago_interes', OLD.pago_interes,
               'pago_mora', OLD.pago_mora),

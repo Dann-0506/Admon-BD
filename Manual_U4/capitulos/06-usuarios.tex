@@ -4,7 +4,7 @@
 \section{Roles y matriz de privilegios}
 \label{sec:roles-matriz}
 
-Los roles del sistema corresponden a puestos reales que pueden existir en una empresa que emita pagar\'es de inversi\'on, en lugar de categorizarse \'unicamente por su capacidad global de consulta, inserci\'on o eliminaci\'on. Cada rol agrupa los privilegios de un puesto, y los usuarios individuales obtienen sus privilegios al recibir el rol correspondiente. Los clientes y los avales no cuentan con roles, ya que no acceden directamente a la base de datos.
+Los roles del sistema corresponden a puestos reales que pueden existir en una empresa que emita pagar\'es de inversi\'on, en lugar de categorizarse \'unicamente por su capacidad global de consulta, inserci\'on o eliminaci\'on. Cada rol agrupa los privilegios de un puesto, y las cuentas del gestor obtienen sus privilegios al recibir el rol correspondiente. Los clientes y los avales no cuentan con roles, ya que no acceden directamente a la base de datos.
 
 \begin{table}[H]
 	\centering
@@ -62,28 +62,80 @@ La tabla~\ref{tab:matriz} muestra los privilegios de cada rol sobre las tablas d
 
 \paragraph{Separaci\'on de funciones.} Quien da de alta la inversi\'on (\nem{rol\us ejecutivo}) no puede registrar pagos ni liquidaciones, y quien los registra (\nem{rol\us tesoreria}) no puede modificar las inversiones, por lo que el capital y las tasas quedan fuera de su alcance. Del mismo modo, el DBA administra la estructura de la base de datos, pero no participa en la operaci\'on del negocio.	
 
-\paragraph{Usuarios.} El personal accede directamente a la base de datos, sin una aplicación intermedia. Por ello, cada integrante del equipo cuenta con un usuario propio en el gestor, que recibe el rol de su puesto; de esta forma, la bitácora identifica a la persona que realizó cada operación y no solo el puesto desde el que la realizó. Si una persona cambia de puesto, basta con cambiar su rol, sin crear otra cuenta ni perder su historial. La única excepción es el usuario de respaldo, que no corresponde a una persona sino a la herramienta que genera los respaldos. La tabla~\ref{tab:usuarios} muestra los usuarios del sistema, con el mismo nombre en ambos gestores.
+\paragraph{Tipos de usuario.} El personal accede directamente a la base de datos, sin una aplicación intermedia, y el sistema distingue dos tipos de usuario según la naturaleza de su puesto:
+
+\begin{itemize}
+	\item \textbf{Administrativos.} Quienes administran, vigilan o respaldan el sistema: el DBA, el auditor y la herramienta de respaldo. Son pocos, sus funciones no son intercambiables y sus acciones son las más delicadas, por lo que cada uno cuenta con una \textbf{cuenta dedicada} en el gestor. La cuenta identifica por sí sola a quien actúa. El usuario de respaldo no corresponde a una persona sino a la herramienta que genera los respaldos.
+	\item \textbf{Operativos.} Quienes operan el negocio: el gerente, el ejecutivo y la tesorería. Son los más numerosos y los puestos son intercambiables, por lo que comparten una \textbf{cuenta por rol}: todos los ejecutivos entran con la misma cuenta, todos los gerentes con la suya, y así con la tesorería. Como la cuenta no distingue a la persona, cada una se identifica al inicio de cada transacción (sección~\ref{sec:identificacion}).
+\end{itemize}
+
+Este modelo evita crear y dar de baja cuentas del gestor cada vez que cambia el personal operativo, y mantiene el número de cuentas igual al de roles. Si una persona cambia de puesto, basta con que use la cuenta de su nuevo rol y se identifique con su mismo nombre, sin perder su historial en la bitácora. La tabla~\ref{tab:usuarios} muestra las cuentas del sistema, con el mismo nombre en ambos gestores.
 
 \begin{table}[H]
 	\centering
 	\small
-	\caption{Usuarios del sistema}
+	\caption{Cuentas del sistema}
 	\label{tab:usuarios}
-	\begin{tabular}{@{}l l L{7cm}@{}}
+	\begin{tabular}{@{}l l l L{5.4cm}@{}}
 		\toprule
-		\textbf{Usuario} & \textbf{Rol} & \textbf{Titular} \\
+		\textbf{Cuenta} & \textbf{Tipo} & \textbf{Rol} & \textbf{Titulares} \\
 		\midrule
-		\nem{dlandero} & \nem{rol\us admin\us bd} & Daniel Landero Arias \\
-		\nem{dmejia}   & \nem{rol\us gerente}   & Diego de Jesús Mejía Rodríguez \\
-		\nem{pzuniga}  & \nem{rol\us ejecutivo} & Pedro Armando Zúñiga Durán \\
-		\nem{xzaleta}  & \nem{rol\us tesoreria} & Ximena Zaleta Hernández \\
-		\nem{enovoa}   & \nem{rol\us auditor}   & Eduardo Novoa Siles \\
-		\nem{respaldo} & \nem{rol\us respaldo}  & Cuenta técnica \\
+		\nem{dlandero}     & Administrativa & \nem{rol\us admin\us bd} & Daniel Landero Arias \\
+		\nem{enovoa}       & Administrativa & \nem{rol\us auditor}     & Eduardo Novoa Siles \\
+		\nem{respaldo}     & Administrativa & \nem{rol\us respaldo}    & Herramienta de respaldo \\
+		\nem{op\us gerente}   & Operativa & \nem{rol\us gerente}   & \nem{dmejia}: Diego de Jesús Mejía Rodríguez \\
+		\nem{op\us ejecutivo} & Operativa & \nem{rol\us ejecutivo} & \nem{pzuniga}: Pedro Armando Zúñiga Durán \\
+		\nem{op\us tesoreria} & Operativa & \nem{rol\us tesoreria} & \nem{xzaleta}: Ximena Zaleta Hernández \\
 		\bottomrule
 	\end{tabular}
 \end{table}
 
-Los nombres de usuario se forman con la inicial del nombre y el primer apellido, sin acentos ni la letra ñ, para que sean válidos y se escriban igual en ambos gestores.
+Los nombres de las cuentas administrativas y de las personas que usan las cuentas operativas se forman con la inicial del nombre y el primer apellido, sin acentos ni la letra ñ, para que sean válidos y se escriban igual en ambos gestores. Las cuentas operativas llevan el prefijo \nem{op\us} seguido del puesto. Los nombres \nem{dmejia}, \nem{pzuniga} y \nem{xzaleta} no son cuentas del gestor: son los nombres con los que sus titulares se identifican en la bitácora.
+
+\section{Identificaci\'on del usuario en cada transacci\'on}
+\label{sec:identificacion}
+
+Como las cuentas operativas son compartidas, el gestor solo sabe qu\'e cuenta, y por tanto qu\'e rol, inici\'o la sesi\'on; no sabe qu\'e persona la usa. Para que la bit\'acora pueda atribuir cada cambio, la persona declara su nombre con una sentencia \nem{SET} al inicio de cada transacci\'on, antes de modificar datos. Los triggers de bit\'acora leen ese valor (cap\'itulo~\ref{cap:bitacora}).
+
+\begin{table}[H]
+	\centering
+	\small
+	\caption{Sentencia de identificaci\'on en cada gestor}
+	\label{tab:identificacion}
+	\begin{tabular}{@{}l L{5.2cm} L{6.2cm}@{}}
+		\toprule
+		& \textbf{PostgreSQL} & \textbf{MySQL} \\
+		\midrule
+		Sentencia & \nem{SET LOCAL inversiones.usuario} & \nem{SET @usuario} \\
+		Alcance & La transacci\'on en curso; el valor desaparece con \nem{COMMIT} o \nem{ROLLBACK} & La sesi\'on; permanece despu\'es de la transacci\'on \\
+		Variable & Par\'ametro de configuraci\'on personalizado & Variable de usuario \\
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+\begin{verbatim}
+	-- PostgreSQL, conectado como op_ejecutivo
+	BEGIN;
+	SET LOCAL inversiones.usuario = 'pzuniga';
+	INSERT INTO cliente (...) VALUES (...);
+	COMMIT;
+
+	-- MySQL, conectado como op_ejecutivo
+	START TRANSACTION;
+	SET @usuario = 'pzuniga';
+	INSERT INTO cliente (...) VALUES (...);
+	COMMIT;
+\end{verbatim}
+
+Las reglas del modelo son las siguientes:
+
+\begin{itemize}
+	\item Las cuentas operativas deben identificarse: si modifican datos sin haberlo hecho, el trigger rechaza la operaci\'on con un mensaje que indica la sentencia que falta. As\'i, ning\'un cambio operativo queda sin responsable.
+	\item Las cuentas administrativas no se identifican con \nem{SET}: la bit\'acora registra el nombre de su cuenta e ignora cualquier valor declarado, de modo que nadie pueda hacerse pasar por otra persona desde una cuenta administrativa.
+	\item En MySQL la variable permanece activa hasta que se cambia o la sesi\'on termina, a diferencia de PostgreSQL, donde \nem{SET LOCAL} caduca con la transacci\'on. Por ello, la sentencia debe ejecutarse al inicio de \emph{cada} transacci\'on, aunque la sesi\'on la haya declarado antes, y al terminar una sesi\'on compartida conviene ejecutar \nem{SET @usuario = NULL}.
+\end{itemize}
+
+\paragraph{Alcance de la identificaci\'on.} La cuenta, el rol y la direcci\'on IP los verifica el gestor y no pueden falsificarse. El nombre de la persona, en cambio, es una declaraci\'on: una cuenta compartida no puede comprobarlo, porque cualquier usuario del rol podr\'ia escribir el nombre de otro. El modelo no sustituye la autenticaci\'on individual: la sustituye por una identificaci\'on que, junto con el rol y la IP, permite reconstruir qui\'en realiz\'o cada cambio y desde d\'onde, y que se contrasta con el registro de conexiones del servidor. Las cuentas administrativas, las m\'as sensibles, conservan la autenticaci\'on individual.
 
 \section{Administraci\'on de la instancia y de la base de datos}
 \label{sec:admin-instancia}
@@ -142,7 +194,7 @@ En PostgreSQL, el usuario de la persona que funge como DBA trabaja con \nem{SET 
 \section{Creaci\'on de roles y usuarios en PostgreSQL}
 \label{sec:roles-pg}
 
-En PostgreSQL, roles y usuarios son el mismo tipo de objeto; la diferencia es que un usuario tiene el atributo \nem{LOGIN}. Los roles de puesto se crean sin él, de modo que nadie puede iniciar sesión directamente como un puesto: solo a través de su usuario personal.
+En PostgreSQL, roles y usuarios son el mismo tipo de objeto; la diferencia es que un usuario tiene el atributo \nem{LOGIN}. Los roles de puesto se crean sin él, de modo que nadie puede iniciar sesión directamente como un puesto: solo a través de una cuenta que lo posea, ya sea dedicada (administrativa) o compartida (operativa).
 
 \paragraph{Ejecutado por el superusuario.} De acuerdo con la sección~\ref{sec:admin-instancia}, el superusuario crea únicamente el rol del DBA y su usuario. El rol recibe el atributo \nem{CREATEROLE}, que le permite crear los demás roles y usuarios sin ser superusuario.
 
@@ -151,7 +203,7 @@ En PostgreSQL, roles y usuarios son el mismo tipo de objeto; la diferencia es qu
 	CREATE USER dlandero WITH PASSWORD 'Dlandero#2026' IN ROLE rol_admin_bd;
 \end{verbatim}
 
-\paragraph{Ejecutado por el DBA.} Los atributos de un rol, como \nem{CREATEROLE}, no se heredan por pertenencia; se obtienen al asumir el rol con \nem{SET ROLE}. Esto coincide con la forma de trabajo descrita en la sección~\ref{sec:admin-instancia}: los roles creados quedan a nombre de \nem{rol\us admin\us bd} y no de la persona, y el gestor le concede automáticamente la facultad de asignarlos.
+\paragraph{Ejecutado por el DBA.} El DBA crea los roles de puesto, las tres cuentas operativas compartidas y las cuentas del auditor y de respaldo. Los atributos de un rol, como \nem{CREATEROLE}, no se heredan por pertenencia; se obtienen al asumir el rol con \nem{SET ROLE}. Esto coincide con la forma de trabajo descrita en la sección~\ref{sec:admin-instancia}: los roles creados quedan a nombre de \nem{rol\us admin\us bd} y no de la persona, y el gestor le concede automáticamente la facultad de asignarlos.
 
 \begin{verbatim}
 	SET ROLE rol_admin_bd;
@@ -162,9 +214,12 @@ En PostgreSQL, roles y usuarios son el mismo tipo de objeto; la diferencia es qu
 	CREATE ROLE rol_auditor   NOLOGIN;
 	CREATE ROLE rol_respaldo  NOLOGIN;
 	
-	CREATE USER dmejia   WITH PASSWORD 'Dmejia#2026'   IN ROLE rol_gerente;
-	CREATE USER pzuniga  WITH PASSWORD 'Pzuniga#2026'  IN ROLE rol_ejecutivo;
-	CREATE USER xzaleta  WITH PASSWORD 'Xzaleta#2026'  IN ROLE rol_tesoreria;
+	-- Cuentas compartidas de operación (una por rol)
+	CREATE USER op_gerente   WITH PASSWORD 'OpGerente#2026'   IN ROLE rol_gerente;
+	CREATE USER op_ejecutivo WITH PASSWORD 'OpEjecutivo#2026' IN ROLE rol_ejecutivo;
+	CREATE USER op_tesoreria WITH PASSWORD 'OpTesoreria#2026' IN ROLE rol_tesoreria;
+	
+	-- Cuentas administrativas (una por persona o herramienta)
 	CREATE USER enovoa   WITH PASSWORD 'Enovoa#2026'   IN ROLE rol_auditor;
 	CREATE USER respaldo WITH PASSWORD 'Respaldo#2026' IN ROLE rol_respaldo;
 	
@@ -177,7 +232,7 @@ necesita privilegios sobre la instancia.
 \section{Creaci\'on de roles y usuarios en MySQL}
 \label{sec:roles-mysql}
 
-En MySQL, los roles y los usuarios son objetos distintos, y los roles concedidos a un usuario permanecen inactivos hasta que se activan. Por ello, cada usuario se crea con su rol como rol por defecto (\nem{DEFAULT ROLE}), de modo que sus privilegios están disponibles desde el inicio de la sesión. Todos los usuarios se definen con el origen \nem{'\%'}, por las razones expuestas en la sección~\ref{sec:conexion-mysql}.
+En MySQL, los roles y los usuarios son objetos distintos, y los roles concedidos a un usuario permanecen inactivos hasta que se activan. Por ello, cada cuenta se crea con su rol como rol por defecto (\nem{DEFAULT ROLE}), de modo que sus privilegios están disponibles desde el inicio de la sesión. Todas las cuentas se definen con el origen \nem{'\%'}, por las razones expuestas en la sección~\ref{sec:conexion-mysql}.
 
 \paragraph{Ejecutado por el superusuario.} El superusuario crea el rol del DBA, le otorga el control total sobre la base de datos \nem{inversiones}, que en MySQL equivale a ser su dueño, y los privilegios necesarios para administrar roles y usuarios. MySQL permite otorgar privilegios sobre una base de datos que aún no existe, por lo que este paso puede realizarse antes de crearla.
 
@@ -192,19 +247,21 @@ En MySQL, los roles y los usuarios son objetos distintos, y los roles concedidos
 
 El privilegio \nem{CREATE USER} permite modificar cualquier cuenta. Sin embargo, \nem{root} posee el privilegio \nem{SYSTEM\us USER}, y una cuenta con ese privilegio solo puede ser modificada por otra que también lo tenga; como el DBA no lo posee, no puede alterar la cuenta del superusuario.
 
-\paragraph{Ejecutado por el DBA.} El DBA crea los roles de puesto y los
-usuarios del personal:
+\paragraph{Ejecutado por el DBA.} El DBA crea los roles de puesto y las cuentas del sistema:
 
 \begin{verbatim}
 	CREATE ROLE rol_gerente, rol_ejecutivo, rol_tesoreria,
 	            rol_auditor, rol_respaldo;
 
-	CREATE USER 'dmejia'@'%'   IDENTIFIED BY 'Dmejia#2026'
+	-- Cuentas compartidas de operación (una por rol)
+	CREATE USER 'op_gerente'@'%'   IDENTIFIED BY 'OpGerente#2026'
 	  DEFAULT ROLE rol_gerente;
-	CREATE USER 'pzuniga'@'%'  IDENTIFIED BY 'Pzuniga#2026'
+	CREATE USER 'op_ejecutivo'@'%' IDENTIFIED BY 'OpEjecutivo#2026'
 	  DEFAULT ROLE rol_ejecutivo;
-	CREATE USER 'xzaleta'@'%'  IDENTIFIED BY 'Xzaleta#2026'
+	CREATE USER 'op_tesoreria'@'%' IDENTIFIED BY 'OpTesoreria#2026'
 	  DEFAULT ROLE rol_tesoreria;
+
+	-- Cuentas administrativas (una por persona o herramienta)
 	CREATE USER 'enovoa'@'%'   IDENTIFIED BY 'Enovoa#2026'
 	  DEFAULT ROLE rol_auditor;
 	CREATE USER 'respaldo'@'%' IDENTIFIED BY 'Respaldo#2026'
